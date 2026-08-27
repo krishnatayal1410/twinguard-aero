@@ -1,15 +1,102 @@
-import time, requests
+import os
+import time
+
+import requests
+
 from engine import EngineSimulator
 
+
+TELEMETRY_API = os.getenv("TWINGUARD_TELEMETRY_API", "http://127.0.0.1:8000/telemetry")
+CONTROL_API = os.getenv("TWINGUARD_CONTROL_API", "http://127.0.0.1:8000/simulation/control")
+
+CONTROL_TIMEOUT_SECONDS = 1.0
+TELEMETRY_TIMEOUT_SECONDS = 2.0
+SEVERITY_RAMP_PER_SECOND = 0.04
+
 sim = EngineSimulator()
-API = "http://localhost:8000/telemetry"
+
+applied_fault = "normal"
+applied_severity = 0.0
+last_reset_token = None
 
 print("TwinGuard simulator started.")
+print("Fault control: GET/POST http://127.0.0.1:8000/simulation/control")
+
+
+def move_toward(current: float, target: float, step: float) -> float:
+    if current < target:
+        return min(target, current + step)
+    if current > target:
+        return max(target, current - step)
+    return current
+
+
 while True:
-    payload = sim.step()
+    target_fault = applied_fault
+    target_severity = applied_severity
+
     try:
-        r = requests.post(API, json=payload, timeout=2)
-        print(r.status_code, payload["rpm"], payload["cht"], payload["oil_pressure"])
-    except requests.RequestException as e:
-        print("Backend unavailable:", e)
+        control_response = requests.get(
+            CONTROL_API,
+            timeout=CONTROL_TIMEOUT_SECONDS,
+        )
+        control_response.raise_for_status()
+        control = control_response.json()
+
+        target_fault = str(control.get("fault", "normal"))
+        target_severity = float(control.get("severity", 0.0))
+        reset_token = int(control.get("reset_token", 0))
+
+        if last_reset_token is None:
+            last_reset_token = reset_token
+        elif reset_token != last_reset_token:
+            sim = EngineSimulator()
+            applied_fault = "normal"
+            applied_severity = 0.0
+            target_fault = "normal"
+            target_severity = 0.0
+            last_reset_token = reset_token
+            print(f"FULL HEALTHY RESET applied (token={reset_token})")
+
+    except (requests.RequestException, ValueError, TypeError):
+        pass
+
+    if target_fault == "normal":
+        applied_fault = "normal"
+        applied_severity = 0.0
+    else:
+        if target_fault != applied_fault:
+            applied_fault = target_fault
+            applied_severity = 0.0
+
+        applied_severity = move_toward(
+            applied_severity,
+            max(0.0, min(1.0, target_severity)),
+            SEVERITY_RAMP_PER_SECOND,
+        )
+
+    sim.set_fault(applied_fault, applied_severity)
+    payload = sim.step()
+
+    try:
+        response = requests.post(
+            TELEMETRY_API,
+            json=payload,
+            timeout=TELEMETRY_TIMEOUT_SECONDS,
+        )
+
+        print(
+            response.status_code,
+            f"fault={applied_fault}",
+            f"severity={applied_severity:.2f}",
+            f"rpm={payload['rpm']}",
+            f"cht={payload['cht']}",
+            f"oilP={payload['oil_pressure']}",
+            f"oilT={payload['oil_temp']}",
+            f"vib={payload['vibration']}",
+        )
+
+    except requests.RequestException as exc:
+        print("Backend unavailable:", exc)
+
     time.sleep(1)
