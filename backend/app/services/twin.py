@@ -65,11 +65,38 @@ class TwinState:
         )
 
         # Stabilize synthetic RUL so it does not jump unrealistically.
+        previous_ai = self._state.get("ai") or {}
+        previous_rul = previous_ai.get("rul_hours")
+
         ai["rul_hours"] = rul_stabilizer.update(
             raw_rul=ai.get("rul_hours"),
             health=health,
             ai=ai,
         )
+
+        # Final state-aware guard for the synthetic MVP.
+        # A developing anomaly/fault must not make RUL suddenly increase.
+        current_rul = ai.get("rul_hours")
+        fault_active = (
+            bool(ai.get("anomaly", False))
+            or str(ai.get("fault", "normal")) != "normal"
+            or float(health.get("overall", 100)) < 90
+        )
+
+        if previous_rul is not None and current_rul is not None:
+            previous_rul = float(previous_rul)
+            current_rul = float(current_rul)
+
+            if fault_active:
+                current_rul = min(current_rul, previous_rul - 0.15)
+                current_rul = max(current_rul, previous_rul - 2.0)
+            else:
+                current_rul = max(
+                    previous_rul - 1.0,
+                    min(current_rul, previous_rul + 0.5),
+                )
+
+            ai["rul_hours"] = round(max(0.0, current_rul), 1)
 
         # Maintenance decision uses telemetry + AI + health + sensor trust.
         maintenance = maintenance_recommendation(
