@@ -3,6 +3,7 @@ from ..schemas.telemetry import Telemetry
 from ..services.twin import twin_state
 from ..services.models import model_service
 from ..services.mission import simulate_mission
+from ..services.mission_lab import MissionLabRequest, analyze_mission
 from ..services.simulation_control import SimulationControlRequest, simulation_control
 from ..database import save_telemetry, get_history
 from ..websocket_manager import manager
@@ -64,6 +65,11 @@ def set_simulation_control(payload: SimulationControlRequest):
         return control
 
     return simulation_control.set(payload)
+
+
+@router.post("/mission/analyze")
+def analyze_future_mission(payload: MissionLabRequest):
+    return analyze_mission(payload, twin_state.get())
 
 
 @router.post("/mission/simulate")

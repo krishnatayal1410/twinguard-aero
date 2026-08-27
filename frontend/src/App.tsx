@@ -177,6 +177,14 @@ function App() {
   const [simulationSeverity, setSimulationSeverity] = useState(70)
   const [simulationBusy, setSimulationBusy] = useState(false)
   const [simulationMessage, setSimulationMessage] = useState('Healthy baseline active')
+  const [missionDuration, setMissionDuration] = useState(8)
+  const [missionAltitude, setMissionAltitude] = useState(5500)
+  const [missionTemperature, setMissionTemperature] = useState(35)
+  const [missionThrottle, setMissionThrottle] = useState(75)
+  const [missionType, setMissionType] = useState('endurance')
+  const [missionBusy, setMissionBusy] = useState(false)
+  const [missionResult, setMissionResult] = useState<any>(null)
+  const [missionError, setMissionError] = useState('')
   const socketRef = useRef<WebSocket | null>(null)
 
   const applyState = (next: TwinState) => {
@@ -193,6 +201,36 @@ function App() {
     })
   }
 
+
+  const runMissionAnalysis = async () => {
+    setMissionBusy(true)
+    setMissionError('')
+
+    try {
+      const response = await fetch(`${API}/mission/analyze`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          duration_hours: missionDuration,
+          cruise_altitude_m: missionAltitude,
+          ambient_temp_c: missionTemperature,
+          average_throttle_pct: missionThrottle,
+          mission_type: missionType,
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error(`Mission analysis failed: ${response.status}`)
+      }
+
+      setMissionResult(await response.json())
+    } catch (error) {
+      console.error(error)
+      setMissionError('Could not run mission analysis')
+    } finally {
+      setMissionBusy(false)
+    }
+  }
 
   const sendSimulationControl = async (
     fault: string,
@@ -500,6 +538,104 @@ function App() {
             <span className="simulation-disclaimer">
               Synthetic test control · not a physical engine command
             </span>
+          </div>
+        </section>
+
+        <section className="mission-lab-panel panel">
+          <div className="section-heading">
+            <div>
+              <span className="section-kicker">MISSION-AWARE DIGITAL TWIN</span>
+              <h2>Mission Lab</h2>
+            </div>
+            <span className="signal">FUTURE PROFILE</span>
+          </div>
+
+          <div className="mission-lab-grid">
+            <div className="mission-inputs">
+              <label className="control-field">
+                <span>Mission type</span>
+                <select value={missionType} onChange={e => setMissionType(e.target.value)}>
+                  <option value="patrol">Patrol</option>
+                  <option value="endurance">Endurance</option>
+                  <option value="high_altitude">High altitude</option>
+                  <option value="hot_weather">Hot weather</option>
+                </select>
+              </label>
+
+              <label className="mission-number-field">
+                <span>Duration</span>
+                <div><input type="number" min="1" max="30" step="0.5" value={missionDuration} onChange={e => setMissionDuration(Number(e.target.value))} /><small>hours</small></div>
+              </label>
+
+              <label className="mission-number-field">
+                <span>Cruise altitude</span>
+                <div><input type="number" min="0" max="12000" step="250" value={missionAltitude} onChange={e => setMissionAltitude(Number(e.target.value))} /><small>m</small></div>
+              </label>
+
+              <label className="mission-number-field">
+                <span>Ambient temperature</span>
+                <div><input type="number" min="-40" max="60" step="1" value={missionTemperature} onChange={e => setMissionTemperature(Number(e.target.value))} /><small>°C</small></div>
+              </label>
+
+              <label className="mission-number-field">
+                <span>Average throttle</span>
+                <div><input type="number" min="20" max="100" step="5" value={missionThrottle} onChange={e => setMissionThrottle(Number(e.target.value))} /><small>%</small></div>
+              </label>
+
+              <button className="mission-run-button" disabled={missionBusy} onClick={runMissionAnalysis}>
+                {missionBusy ? 'ANALYZING…' : 'SIMULATE MISSION'}
+              </button>
+            </div>
+
+            <div className="mission-output">
+              {!missionResult && !missionError && (
+                <div className="mission-empty">
+                  <strong>Run a future mission profile</strong>
+                  <span>TwinGuard will estimate mission stress, post-mission health, RUL and risk from the current Digital Twin state.</span>
+                </div>
+              )}
+
+              {missionError && <div className="mission-empty danger-text">{missionError}</div>}
+
+              {missionResult && (
+                <>
+                  <div className="mission-result-header">
+                    <div><span>Overall mission risk</span><strong>{missionResult.risk?.overall ?? '—'}</strong></div>
+                    <div className="mission-decision">{String(missionResult.decision ?? '').replaceAll('_', ' ')}</div>
+                  </div>
+
+                  <div className="mission-result-cards">
+                    <div><span>Current health</span><strong>{missionResult.current_state?.health ?? '—'}%</strong></div>
+                    <div><span>Post-mission health</span><strong>{missionResult.prediction?.post_mission_health ?? '—'}%</strong></div>
+                    <div><span>Current RUL</span><strong>{missionResult.current_state?.rul_hours ?? '—'} h</strong></div>
+                    <div><span>Post-mission RUL</span><strong>{missionResult.prediction?.post_mission_rul_hours ?? '—'} h</strong></div>
+                  </div>
+
+                  <div className="mission-risk-row">
+                    <span>Thermal <strong>{missionResult.risk?.thermal ?? '—'}</strong></span>
+                    <span>Mechanical <strong>{missionResult.risk?.mechanical ?? '—'}</strong></span>
+                    <span>Stress <strong>{missionResult.prediction?.stress_index ?? '—'}</strong></span>
+                  </div>
+
+                  <p className="mission-recommendation">{missionResult.recommendation}</p>
+
+                  <div className="counterfactual-box">
+                    <span>Lower-stress alternative</span>
+                    <strong>
+                      {missionResult.counterfactual?.lower_altitude_m ?? '—'} m ·{' '}
+                      {missionResult.counterfactual?.shorter_duration_hours ?? '—'} h ·{' '}
+                      {missionResult.counterfactual?.reduced_throttle_pct ?? '—'}% throttle
+                    </strong>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+
+          <div className="simulation-status-line">
+            <span className="status-dot live" />
+            <span>Mission-conditioned decision support from current twin state</span>
+            <span className="simulation-disclaimer">Synthetic MVP prediction · engine-specific validation required</span>
           </div>
         </section>
 
