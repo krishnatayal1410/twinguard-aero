@@ -1,10 +1,15 @@
 from threading import Lock
+
 from ..schemas.telemetry import Telemetry
 from .physics import expected_state, residuals
 from .health import calculate_health
 from .models import model_service
 from .sensor_trust import calculate_sensor_trust
-from .maintenance import maintenance_recommendation
+from .decision_support import (
+    refine_sensor_trust,
+    maintenance_recommendation,
+    rul_stabilizer,
+)
 
 
 class TwinState:
@@ -34,12 +39,46 @@ class TwinState:
         res = residuals(telemetry, expected)
         raw = telemetry.model_dump()
 
-        # Initial health is used as an input to the current RUL baseline.
+        # Initial health is used as input to the current synthetic RUL model.
         health = calculate_health(raw, res, 0.0)
+
+        # AI inference: anomaly + fault classifier + raw RUL estimate.
         ai = model_service.predict(raw, res, health)
-        health = calculate_health(raw, res, ai.get("anomaly_score", 0.0))
+
+        # Recompute health with anomaly information.
+        health = calculate_health(
+            raw,
+            res,
+            ai.get("anomaly_score", 0.0),
+        )
+
+        # Base residual-derived trust.
         trust = calculate_sensor_trust(raw, res)
-        maintenance = maintenance_recommendation(raw, res, health, ai, trust)
+
+        # Cross-sensor reasoning distinguishes likely physical faults from
+        # isolated sensor inconsistencies.
+        trust = refine_sensor_trust(
+            telemetry=raw,
+            residuals=res,
+            sensor_trust=trust,
+            ai=ai,
+        )
+
+        # Stabilize synthetic RUL so it does not jump unrealistically.
+        ai["rul_hours"] = rul_stabilizer.update(
+            raw_rul=ai.get("rul_hours"),
+            health=health,
+            ai=ai,
+        )
+
+        # Maintenance decision uses telemetry + AI + health + sensor trust.
+        maintenance = maintenance_recommendation(
+            telemetry=raw,
+            residuals=res,
+            sensor_trust=trust,
+            ai=ai,
+            health=health,
+        )
 
         with self._lock:
             self._state = {
