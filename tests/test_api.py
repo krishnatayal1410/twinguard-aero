@@ -66,3 +66,27 @@ def test_mission_simulation():
         result = response.json()
         assert result["mission_risk"] in {"LOW", "MEDIUM", "HIGH"}
         assert "predicted_post_mission_health" in result
+
+def test_simulation_control():
+    with client:
+        response = client.post(
+            "/simulation/control",
+            json={"fault": "lubrication", "severity": 0.7},
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["fault"] == "lubrication"
+        assert body["severity"] == 0.7
+
+        response = client.get("/simulation/control")
+        assert response.status_code == 200
+        assert response.json()["fault"] == "lubrication"
+
+        reset = client.post(
+            "/simulation/control",
+            json={"fault": "normal", "severity": 0.0},
+        )
+        assert reset.status_code == 200
+        assert reset.json()["fault"] == "normal"
+        assert reset.json()["severity"] == 0.0
+

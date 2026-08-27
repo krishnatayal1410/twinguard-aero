@@ -3,6 +3,7 @@ from ..schemas.telemetry import Telemetry
 from ..services.twin import twin_state
 from ..services.models import model_service
 from ..services.mission import simulate_mission
+from ..services.simulation_control import SimulationControlRequest, simulation_control
 from ..database import save_telemetry, get_history
 from ..websocket_manager import manager
 
@@ -48,6 +49,16 @@ async def ingest_telemetry(telemetry: Telemetry):
 def reload_models():
     model_service.reload()
     return {"status": "reloaded"}
+
+
+@router.get("/simulation/control")
+def get_simulation_control():
+    return simulation_control.get()
+
+
+@router.post("/simulation/control")
+def set_simulation_control(payload: SimulationControlRequest):
+    return simulation_control.set(payload)
 
 
 @router.post("/mission/simulate")
