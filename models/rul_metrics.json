@@ -1,0 +1,7 @@
+{
+  "mae_hours": 4.156,
+  "rmse_hours": 5.418,
+  "r2": 0.9906,
+  "split": "degradation missions 00-23 train; 24-29 test",
+  "note": "Synthetic proof-of-concept RUL only; not real-engine validated."
+}
