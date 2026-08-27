@@ -185,6 +185,10 @@ function App() {
   const [missionBusy, setMissionBusy] = useState(false)
   const [missionResult, setMissionResult] = useState<any>(null)
   const [missionError, setMissionError] = useState('')
+  const [replayMissions, setReplayMissions] = useState<any[]>([])
+  const [replaySelected, setReplaySelected] = useState<any>(null)
+  const [replayBusy, setReplayBusy] = useState(false)
+  const [replayMessage, setReplayMessage] = useState('No mission recording active')
   const socketRef = useRef<WebSocket | null>(null)
 
   const applyState = (next: TwinState) => {
@@ -201,6 +205,92 @@ function App() {
     })
   }
 
+
+  const loadReplayMissions = async () => {
+    setReplayBusy(true)
+    try {
+      const response = await fetch(`${API}/replay/missions?limit=12`)
+      if (!response.ok) throw new Error(`Replay list failed: ${response.status}`)
+      setReplayMissions(await response.json())
+    } catch (error) {
+      console.error(error)
+      setReplayMessage('Could not load mission history')
+    } finally {
+      setReplayBusy(false)
+    }
+  }
+
+  const startReplayMission = async () => {
+    setReplayBusy(true)
+    try {
+      const response = await fetch(`${API}/replay/start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          label: `TwinGuard Demo ${new Date().toLocaleString()}`,
+        }),
+      })
+      if (!response.ok) throw new Error(`Replay start failed: ${response.status}`)
+      const result = await response.json()
+      setReplayMessage(`Recording ${result.label}`)
+      await loadReplayMissions()
+    } catch (error) {
+      console.error(error)
+      setReplayMessage('Could not start mission recording')
+    } finally {
+      setReplayBusy(false)
+    }
+  }
+
+  const endReplayMission = async () => {
+    setReplayBusy(true)
+    try {
+      const response = await fetch(`${API}/replay/end`, { method: 'POST' })
+      if (!response.ok) throw new Error(`Replay end failed: ${response.status}`)
+      const result = await response.json()
+      if (result.status === 'NO_ACTIVE_MISSION') {
+        setReplayMessage('No active mission recording')
+      } else {
+        setReplayMessage('Mission completed and analyzed')
+        setReplaySelected(result)
+      }
+      await loadReplayMissions()
+    } catch (error) {
+      console.error(error)
+      setReplayMessage('Could not end mission recording')
+    } finally {
+      setReplayBusy(false)
+    }
+  }
+
+  const openReplayMission = async (missionId: string) => {
+    setReplayBusy(true)
+    try {
+      const response = await fetch(`${API}/replay/missions/${missionId}`)
+      if (!response.ok) throw new Error(`Replay detail failed: ${response.status}`)
+      setReplaySelected(await response.json())
+    } catch (error) {
+      console.error(error)
+      setReplayMessage('Could not open mission replay')
+    } finally {
+      setReplayBusy(false)
+    }
+  }
+
+  const exportReplayMission = () => {
+    if (!replaySelected) return
+    const blob = new Blob([JSON.stringify(replaySelected, null, 2)], {
+      type: 'application/json',
+    })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `twinguard-mission-${replaySelected.id ?? 'report'}.json`
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+  }
 
   const runMissionAnalysis = async () => {
     setMissionBusy(true)
@@ -694,6 +784,97 @@ function App() {
             <span className="status-dot live" />
             <span>Mission-conditioned decision support from current twin state</span>
             <span className="simulation-disclaimer">Synthetic MVP prediction · engine-specific validation required</span>
+          </div>
+        </section>
+
+        <section className="replay-panel panel" id="mission-replay">
+          <div className="section-heading">
+            <div>
+              <span className="section-kicker">MISSION HISTORY & POST-FLIGHT ANALYSIS</span>
+              <h2>Mission Replay</h2>
+            </div>
+            <span className="signal">PERSISTENT HISTORY</span>
+          </div>
+
+          <div className="replay-toolbar">
+            <button className="replay-button primary" disabled={replayBusy} onClick={startReplayMission}>START RECORDING</button>
+            <button className="replay-button danger" disabled={replayBusy} onClick={endReplayMission}>END & ANALYZE</button>
+            <button className="replay-button" disabled={replayBusy} onClick={loadReplayMissions}>REFRESH HISTORY</button>
+            <span className="replay-message">{replayMessage}</span>
+          </div>
+
+          <div className="replay-layout">
+            <div className="replay-mission-list">
+              <div className="replay-column-title">Recorded missions</div>
+              {replayMissions.length === 0 && (
+                <div className="replay-empty">Start recording, run a fault scenario, then end the mission.</div>
+              )}
+              {replayMissions.map((mission: any) => (
+                <button key={mission.id} className={`replay-mission-item ${replaySelected?.id === mission.id ? 'active' : ''}`} onClick={() => openReplayMission(mission.id)}>
+                  <span>{mission.label}</span>
+                  <small>{mission.status}</small>
+                  <small>{mission.summary?.sample_count ?? 0} samples</small>
+                </button>
+              ))}
+            </div>
+
+            <div className="replay-analysis">
+              {!replaySelected && (
+                <div className="replay-empty large">Select a completed mission to inspect its degradation timeline, RUL change and fault history.</div>
+              )}
+
+              {replaySelected && (
+                <>
+                  <div className="replay-analysis-head">
+                    <div><span>Selected mission</span><strong>{replaySelected.label ?? 'TwinGuard Mission'}</strong></div>
+                    <button className="replay-button" onClick={exportReplayMission}>EXPORT JSON</button>
+                  </div>
+
+                  <div className="replay-summary-grid">
+                    <div><span>Start health</span><strong>{replaySelected.summary?.start_health ?? '-'}%</strong></div>
+                    <div><span>End health</span><strong>{replaySelected.summary?.end_health ?? '-'}%</strong></div>
+                    <div><span>RUL change</span><strong>{replaySelected.summary?.rul_change_hours ?? '-'} h</strong></div>
+                    <div><span>Anomaly samples</span><strong>{replaySelected.summary?.anomaly_samples ?? 0}</strong></div>
+                    <div><span>Max CHT</span><strong>{replaySelected.summary?.max_cht ?? '-'} C</strong></div>
+                    <div><span>Min oil pressure</span><strong>{replaySelected.summary?.min_oil_pressure ?? '-'} bar</strong></div>
+                    <div><span>Max vibration</span><strong>{replaySelected.summary?.max_vibration ?? '-'} g</strong></div>
+                    <div><span>Samples</span><strong>{replaySelected.summary?.sample_count ?? 0}</strong></div>
+                  </div>
+
+                  <div className="replay-faults">
+                    <span>Faults observed</span>
+                    <strong>
+                      {(replaySelected.summary?.faults_observed ?? []).length
+                        ? replaySelected.summary.faults_observed.join(', ').replaceAll('_', ' ')
+                        : 'None'}
+                    </strong>
+                  </div>
+
+                  <div className="replay-timeline">
+                    <div className="replay-column-title">Intelligent event timeline</div>
+                    {(replaySelected.summary?.events ?? []).length === 0 && (
+                      <div className="replay-empty">No significant events recorded.</div>
+                    )}
+                    {(replaySelected.summary?.events ?? []).slice(0, 20).map((event: any, index: number) => (
+                      <div className="replay-event" key={`${event.timestamp}-${index}`}>
+                        <span className={`replay-event-dot ${event.severity ?? 'info'}`} />
+                        <div>
+                          <strong>{String(event.type ?? '').replaceAll('_', ' ')}</strong>
+                          <p>{event.message}</p>
+                        </div>
+                        <time>{String(event.timestamp ?? '').slice(11, 19)}</time>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+
+          <div className="simulation-status-line">
+            <span className="status-dot live" />
+            <span>SQLite-backed post-flight analysis and replay</span>
+            <span className="simulation-disclaimer">Synthetic mission history - operational validation required</span>
           </div>
         </section>
 

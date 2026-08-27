@@ -1,3 +1,4 @@
+import os
 import time
 
 import requests
@@ -5,8 +6,8 @@ import requests
 from engine import EngineSimulator
 
 
-TELEMETRY_API = "http://127.0.0.1:8000/telemetry"
-CONTROL_API = "http://127.0.0.1:8000/simulation/control"
+TELEMETRY_API = os.getenv("TWINGUARD_TELEMETRY_API", "http://127.0.0.1:8000/telemetry")
+CONTROL_API = os.getenv("TWINGUARD_CONTROL_API", "http://127.0.0.1:8000/simulation/control")
 
 CONTROL_TIMEOUT_SECONDS = 1.0
 TELEMETRY_TIMEOUT_SECONDS = 2.0

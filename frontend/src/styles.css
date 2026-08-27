@@ -1019,3 +1019,43 @@ button { color: inherit; }
 .xai-bar span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #278bc1, #52d0ff); }
 .xai-feature-meta { color: #587488; font-size: 8px; }
 @media (max-width: 950px) { .xai-layout { grid-template-columns: 1fr; } }
+
+
+/* Mission Replay --------------------------------------------------------- */
+.replay-panel { margin-top:16px; }
+.replay-toolbar { margin-top:16px; display:flex; align-items:center; flex-wrap:wrap; gap:8px; }
+.replay-button { min-height:36px; padding:0 11px; border-radius:8px; border:1px solid #28485e; background:#091927; color:#8ca8ba; font-size:8px; font-weight:900; letter-spacing:.06em; cursor:pointer; }
+.replay-button.primary { border-color:#22654f; color:#74e0bd; background:rgba(45,151,116,.08); }
+.replay-button.danger { border-color:#6f453d; color:#ff9a85; background:rgba(174,79,58,.08); }
+.replay-button:disabled { opacity:.45; cursor:not-allowed; }
+.replay-message { margin-left:auto; color:#617d91; font-size:9px; }
+.replay-layout { margin-top:15px; display:grid; grid-template-columns:minmax(220px,.55fr) minmax(520px,1.45fr); gap:16px; }
+.replay-mission-list,.replay-analysis { min-height:280px; border:1px solid #19374c; border-radius:10px; background:rgba(5,17,27,.35); padding:12px; }
+.replay-column-title { margin-bottom:9px; color:#708da2; font-size:9px; font-weight:900; letter-spacing:.07em; text-transform:uppercase; }
+.replay-mission-list { display:flex; flex-direction:column; gap:7px; }
+.replay-mission-item { width:100%; padding:10px; display:grid; grid-template-columns:1fr auto; gap:3px 8px; text-align:left; border:1px solid #1b394e; border-radius:8px; background:#081724; color:#a7bfce; cursor:pointer; }
+.replay-mission-item:hover,.replay-mission-item.active { border-color:#357ba3; background:rgba(40,126,173,.08); }
+.replay-mission-item span { grid-column:1/-1; color:#d7e7f0; font-size:10px; font-weight:700; }
+.replay-mission-item small { color:#587489; font-size:8px; }
+.replay-empty { padding:22px 12px; text-align:center; color:#5d788c; font-size:9px; line-height:1.6; }
+.replay-empty.large { min-height:230px; display:grid; place-items:center; }
+.replay-analysis-head { display:flex; justify-content:space-between; gap:12px; align-items:center; }
+.replay-analysis-head > div { display:grid; gap:4px; }
+.replay-analysis-head span { color:#668398; font-size:8px; text-transform:uppercase; }
+.replay-analysis-head strong { color:#e4f0f6; font-size:14px; }
+.replay-summary-grid { margin-top:13px; display:grid; grid-template-columns:repeat(4,1fr); gap:7px; }
+.replay-summary-grid > div { padding:9px; display:grid; gap:4px; border:1px solid #19374c; border-radius:7px; background:#081724; }
+.replay-summary-grid span,.replay-faults span { color:#678499; font-size:8px; }
+.replay-summary-grid strong { color:#dcecf5; font-size:12px; }
+.replay-faults { margin-top:10px; padding:9px 10px; display:flex; justify-content:space-between; gap:10px; border-bottom:1px solid #19374c; }
+.replay-faults strong { color:#9bcde5; font-size:9px; text-transform:capitalize; }
+.replay-timeline { margin-top:14px; }
+.replay-event { display:grid; grid-template-columns:12px 1fr auto; gap:8px; align-items:start; padding:8px 0; border-bottom:1px solid #122c3e; }
+.replay-event-dot { width:7px; height:7px; margin-top:4px; border-radius:999px; background:#4b9ecc; }
+.replay-event-dot.warning { background:#e0ad55; }
+.replay-event-dot.critical { background:#e36b6b; }
+.replay-event strong { color:#b9d1df; font-size:8px; letter-spacing:.04em; }
+.replay-event p { margin:3px 0 0; color:#658094; font-size:8px; }
+.replay-event time { color:#4e6a7d; font-size:8px; }
+@media(max-width:1000px){.replay-layout{grid-template-columns:1fr}}
+@media(max-width:700px){.replay-message{width:100%;margin-left:0}.replay-summary-grid{grid-template-columns:1fr 1fr}}
