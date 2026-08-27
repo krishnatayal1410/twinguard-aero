@@ -1059,3 +1059,26 @@ button { color: inherit; }
 .replay-event time { color:#4e6a7d; font-size:8px; }
 @media(max-width:1000px){.replay-layout{grid-template-columns:1fr}}
 @media(max-width:700px){.replay-message{width:100%;margin-left:0}.replay-summary-grid{grid-template-columns:1fr 1fr}}
+
+
+/* TwinGuard navigation fix V2 */
+[data-tg-page-hidden="true"] {
+  display: none !important;
+}
+
+body[data-tg-page="mission"] .mission-lab-panel,
+body[data-tg-page="replay"] .replay-panel,
+body[data-tg-page="diagnostics"] .xai-panel {
+  animation: tgNavigationEnter .18s ease-out;
+}
+
+@keyframes tgNavigationEnter {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

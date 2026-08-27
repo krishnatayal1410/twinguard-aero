@@ -433,6 +433,149 @@ function App() {
 
   const trustEntries = Object.entries(trust)
 
+  // TWINGUARD_NAVIGATION_FIX_V2
+  useEffect(() => {
+    const classifyPage = (label: string) => {
+      const value = label.toLowerCase()
+      if (value.includes('diagnostic')) return 'diagnostics'
+      if (value.includes('mission replay')) return 'replay'
+      if (value.includes('mission lab')) return 'mission'
+      if (value.includes('maintenance')) return 'maintenance'
+      return 'command'
+    }
+
+    const normalize = (element: HTMLElement) =>
+      (element.innerText || element.textContent || '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .toLowerCase()
+
+    const applyPage = (page: string) => {
+      document.body.dataset.tgPage = page
+
+      const sections = Array.from(
+        document.querySelectorAll<HTMLElement>('main section')
+      )
+
+      sections.forEach((section) => {
+        section.removeAttribute('data-tg-page-hidden')
+      })
+
+      const showOnly = (predicate: (section: HTMLElement) => boolean) => {
+        sections.forEach((section) => {
+          if (!predicate(section)) {
+            section.setAttribute('data-tg-page-hidden', 'true')
+          }
+        })
+      }
+
+      if (page === 'mission') {
+        showOnly((section) => {
+          const content = normalize(section)
+          return (
+            section.classList.contains('mission-lab-panel') ||
+            content.includes('mission-aware digital twin') ||
+            content.includes('mission lab')
+          )
+        })
+      }
+
+      if (page === 'replay') {
+        showOnly((section) => {
+          const content = normalize(section)
+          return (
+            section.classList.contains('replay-panel') ||
+            content.includes('mission history & post-flight analysis') ||
+            content.includes('mission replay')
+          )
+        })
+      }
+
+      if (page === 'diagnostics') {
+        showOnly((section) => {
+          const content = normalize(section)
+          return (
+            section.classList.contains('xai-panel') ||
+            content.includes('ai explainability') ||
+            content.includes('why twinguard thinks this') ||
+            content.includes('ai / phm layer') ||
+            content.includes('diagnostics') ||
+            content.includes('subsystem health') ||
+            content.includes('sensor trust') ||
+            content.includes('actual vs expected') ||
+            content.includes('physics-residual twin')
+          )
+        })
+      }
+
+      if (page === 'maintenance') {
+        showOnly((section) => {
+          const content = normalize(section)
+          return (
+            content.includes('operational decision') ||
+            content.includes('mission readiness') ||
+            content.includes('maintenance priority') ||
+            content.includes('predictive maintenance') ||
+            content.includes('maintenance recommendation')
+          )
+        })
+      }
+
+      if (page === 'command') {
+        showOnly((section) => {
+          const content = normalize(section)
+          return !(
+            section.classList.contains('mission-lab-panel') ||
+            section.classList.contains('replay-panel') ||
+            section.classList.contains('xai-panel') ||
+            content.includes('mission-aware digital twin') ||
+            content.includes('mission history & post-flight analysis') ||
+            content.includes('why twinguard thinks this')
+          )
+        })
+      }
+
+      const hash = `#${page}`
+      if (window.location.hash !== hash) {
+        window.history.replaceState(null, '', hash)
+      }
+
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+    }
+
+    const handleClick = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null
+      if (!target) return
+
+      const clickable = target.closest('button, a, [role="button"]') as HTMLElement | null
+      if (!clickable) return
+
+      const label = normalize(clickable)
+
+      if (
+        label.includes('command center') ||
+        label.includes('diagnostics') ||
+        label.includes('mission lab') ||
+        label.includes('mission replay') ||
+        label.includes('maintenance')
+      ) {
+        applyPage(classifyPage(label))
+      }
+    }
+
+    document.addEventListener('click', handleClick)
+
+    const initial = window.location.hash.replace('#', '')
+    if (['command', 'diagnostics', 'mission', 'replay', 'maintenance'].includes(initial)) {
+      setTimeout(() => applyPage(initial), 50)
+    } else {
+      setTimeout(() => applyPage('command'), 50)
+    }
+
+    return () => document.removeEventListener('click', handleClick)
+  }, [state])
+
+
   return (
     <div className="app-shell">
       <aside className="sidebar">
