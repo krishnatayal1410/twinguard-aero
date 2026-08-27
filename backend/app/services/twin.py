@@ -121,6 +121,36 @@ class TwinState:
             }
             return self._state
 
+    def reset(self) -> dict:
+        rul_stabilizer.reset()
+
+        clean_state = {
+            "engine_id": "ENGINE-01",
+            "status": "waiting_for_healthy_telemetry",
+            "telemetry": None,
+            "expected": None,
+            "residuals": None,
+            "sensor_trust": None,
+            "health": None,
+            "ai": {
+                "anomaly": False,
+                "anomaly_score": 0.0,
+                "fault": "normal",
+                "fault_probability": 0.0,
+                "fault_probabilities": {},
+                "rul_hours": None,
+            },
+            "maintenance": {
+                "priority": "MONITOR",
+                "system": "none",
+                "message": "Healthy reset requested. Waiting for fresh telemetry.",
+            },
+        }
+
+        with self._lock:
+            self._state = clean_state
+            return self._state
+
     def get(self) -> dict:
         with self._lock:
             return self._state

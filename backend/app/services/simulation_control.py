@@ -20,21 +20,24 @@ class SimulationControlRequest(BaseModel):
 
 
 class SimulationControl:
-    # Development-only control state for the synthetic engine simulator.
-
     def __init__(self):
         self._lock = Lock()
         self._fault: FaultType = "normal"
         self._severity: float = 0.0
+        self._reset_token: int = 0
         self._updated_at = datetime.now(timezone.utc)
+
+    def _snapshot(self) -> dict:
+        return {
+            "fault": self._fault,
+            "severity": self._severity,
+            "reset_token": self._reset_token,
+            "updated_at": self._updated_at.isoformat(),
+        }
 
     def get(self) -> dict:
         with self._lock:
-            return {
-                "fault": self._fault,
-                "severity": self._severity,
-                "updated_at": self._updated_at.isoformat(),
-            }
+            return self._snapshot()
 
     def set(self, request: SimulationControlRequest) -> dict:
         severity = 0.0 if request.fault == "normal" else float(request.severity)
@@ -43,11 +46,15 @@ class SimulationControl:
             self._fault = request.fault
             self._severity = severity
             self._updated_at = datetime.now(timezone.utc)
-            return {
-                "fault": self._fault,
-                "severity": self._severity,
-                "updated_at": self._updated_at.isoformat(),
-            }
+            return self._snapshot()
+
+    def reset(self) -> dict:
+        with self._lock:
+            self._fault = "normal"
+            self._severity = 0.0
+            self._reset_token += 1
+            self._updated_at = datetime.now(timezone.utc)
+            return self._snapshot()
 
 
 simulation_control = SimulationControl()

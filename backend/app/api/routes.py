@@ -58,6 +58,11 @@ def get_simulation_control():
 
 @router.post("/simulation/control")
 def set_simulation_control(payload: SimulationControlRequest):
+    if payload.fault == "normal":
+        control = simulation_control.reset()
+        twin_state.reset()
+        return control
+
     return simulation_control.set(payload)
 
 

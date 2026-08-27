@@ -16,6 +16,7 @@ sim = EngineSimulator()
 
 applied_fault = "normal"
 applied_severity = 0.0
+last_reset_token = None
 
 print("TwinGuard simulator started.")
 print("Fault control: GET/POST http://127.0.0.1:8000/simulation/control")
@@ -43,6 +44,19 @@ while True:
 
         target_fault = str(control.get("fault", "normal"))
         target_severity = float(control.get("severity", 0.0))
+        reset_token = int(control.get("reset_token", 0))
+
+        if last_reset_token is None:
+            last_reset_token = reset_token
+        elif reset_token != last_reset_token:
+            sim = EngineSimulator()
+            applied_fault = "normal"
+            applied_severity = 0.0
+            target_fault = "normal"
+            target_severity = 0.0
+            last_reset_token = reset_token
+            print(f"FULL HEALTHY RESET applied (token={reset_token})")
+
     except (requests.RequestException, ValueError, TypeError):
         pass
 
@@ -69,6 +83,7 @@ while True:
             json=payload,
             timeout=TELEMETRY_TIMEOUT_SECONDS,
         )
+
         print(
             response.status_code,
             f"fault={applied_fault}",
@@ -79,6 +94,7 @@ while True:
             f"oilT={payload['oil_temp']}",
             f"vib={payload['vibration']}",
         )
+
     except requests.RequestException as exc:
         print("Backend unavailable:", exc)
 
