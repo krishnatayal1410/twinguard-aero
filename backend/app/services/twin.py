@@ -5,6 +5,7 @@ from .physics import expected_state, residuals
 from .health import calculate_health
 from .models import model_service
 from .sensor_trust import calculate_sensor_trust
+from .explainability import explain_prediction
 from .decision_support import (
     refine_sensor_trust,
     maintenance_recommendation,
@@ -99,6 +100,14 @@ class TwinState:
             ai["rul_hours"] = round(max(0.0, current_rul), 1)
 
         # Maintenance decision uses telemetry + AI + health + sensor trust.
+        ai["explanation"] = explain_prediction(
+            model_service=model_service,
+            telemetry=raw,
+            residuals=res,
+            health=health,
+            ai=ai,
+        )
+
         maintenance = maintenance_recommendation(
             telemetry=raw,
             residuals=res,

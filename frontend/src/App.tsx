@@ -541,6 +541,64 @@ function App() {
           </div>
         </section>
 
+        <section className="xai-panel panel">
+          <div className="section-heading">
+            <div>
+              <span className="section-kicker">AI EXPLAINABILITY</span>
+              <h2>Why TwinGuard Thinks This</h2>
+            </div>
+            <span className="signal">
+              {String((state?.ai as any)?.explanation?.method ?? 'EVIDENCE')
+                .replaceAll('_', ' ')
+                .toUpperCase()}
+            </span>
+          </div>
+
+          <div className="xai-layout">
+            <div className="xai-summary">
+              <span>Probable condition</span>
+              <strong>
+                {String(state?.ai?.fault ?? 'normal').replaceAll('_', ' ')}
+              </strong>
+              <p>
+                {(state?.ai as any)?.explanation?.summary ??
+                  'Waiting for enough telemetry to explain the current prediction.'}
+              </p>
+              <small>
+                Explanation is decision support for the synthetic MVP, not a certified root-cause conclusion.
+              </small>
+            </div>
+
+            <div className="xai-features">
+              {((state?.ai as any)?.explanation?.top_features ?? []).length === 0 && (
+                <div className="xai-empty">Waiting for explanation data...</div>
+              )}
+
+              {((state?.ai as any)?.explanation?.top_features ?? []).map(
+                (item: any, index: number) => (
+                  <div className="xai-feature-row" key={`${item.feature}-${index}`}>
+                    <div className="xai-feature-title">
+                      <span>{item.label ?? item.feature}</span>
+                      <strong>{item.importance_pct ?? 0}%</strong>
+                    </div>
+                    <div className="xai-bar">
+                      <span
+                        style={{
+                          width: `${Math.max(2, Math.min(100, Number(item.importance_pct ?? 0)))}%`,
+                        }}
+                      />
+                    </div>
+                    <div className="xai-feature-meta">
+                      <span>Value {item.value ?? '-'}</span>
+                      <span>{String(item.direction ?? 'evidence').toUpperCase()}</span>
+                    </div>
+                  </div>
+                ),
+              )}
+            </div>
+          </div>
+        </section>
+
         <section className="mission-lab-panel panel">
           <div className="section-heading">
             <div>

@@ -999,3 +999,23 @@ button { color: inherit; }
   .mission-risk-row, .counterfactual-box { flex-direction:column; }
   .counterfactual-box strong { text-align:left; }
 }
+
+
+/* AI Explainability ------------------------------------------------------- */
+.xai-panel { margin-top: 16px; }
+.xai-layout { margin-top: 17px; display: grid; grid-template-columns: minmax(250px,.7fr) minmax(420px,1.3fr); gap: 18px; }
+.xai-summary { padding: 15px; border: 1px solid #19374c; border-radius: 10px; background: rgba(5,17,27,.38); display: grid; align-content: start; gap: 7px; }
+.xai-summary > span { color: #718ca0; font-size: 9px; text-transform: uppercase; letter-spacing: .06em; }
+.xai-summary > strong { color: #edf6fb; font-size: 20px; text-transform: capitalize; }
+.xai-summary p { margin: 7px 0 0; color: #90a8b9; font-size: 10px; line-height: 1.6; }
+.xai-summary small { margin-top: 8px; color: #536f82; font-size: 8px; line-height: 1.5; }
+.xai-features { display: grid; gap: 9px; }
+.xai-empty { min-height: 130px; display: grid; place-items: center; border: 1px dashed #244259; border-radius: 10px; color: #617c90; font-size: 10px; }
+.xai-feature-row { padding: 10px 12px; border: 1px solid #19374c; border-radius: 9px; background: #081724; }
+.xai-feature-title, .xai-feature-meta { display: flex; justify-content: space-between; gap: 12px; }
+.xai-feature-title span { color: #b9cddd; font-size: 10px; }
+.xai-feature-title strong { color: #7dd7ff; font-size: 10px; }
+.xai-bar { height: 5px; margin: 8px 0; overflow: hidden; border-radius: 999px; background: #10283a; }
+.xai-bar span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #278bc1, #52d0ff); }
+.xai-feature-meta { color: #587488; font-size: 8px; }
+@media (max-width: 950px) { .xai-layout { grid-template-columns: 1fr; } }
