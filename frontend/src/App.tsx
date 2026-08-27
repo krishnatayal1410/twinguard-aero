@@ -173,6 +173,10 @@ function App() {
   const [activeMetric, setActiveMetric] = useState<MetricKey>('cht')
   const [history, setHistory] = useState<History>(EMPTY_HISTORY)
   const [activeView, setActiveView] = useState('Command Center')
+  const [simulationFault, setSimulationFault] = useState('normal')
+  const [simulationSeverity, setSimulationSeverity] = useState(70)
+  const [simulationBusy, setSimulationBusy] = useState(false)
+  const [simulationMessage, setSimulationMessage] = useState('Healthy baseline active')
   const socketRef = useRef<WebSocket | null>(null)
 
   const applyState = (next: TwinState) => {
@@ -187,6 +191,49 @@ function App() {
       })
       return updated
     })
+  }
+
+
+  const sendSimulationControl = async (
+    fault: string,
+    severity: number,
+  ) => {
+    setSimulationBusy(true)
+
+    try {
+      const response = await fetch(`${API}/simulation/control`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          fault,
+          severity: fault === 'normal' ? 0 : severity / 100,
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error(`Simulation control failed: ${response.status}`)
+      }
+
+      const control = await response.json()
+      setSimulationFault(control.fault || fault)
+
+      if (control.fault === 'normal') {
+        setSimulationMessage('Healthy baseline active')
+      } else {
+        setSimulationMessage(
+          `${String(control.fault).replaceAll('_', ' ')} injected at ${Math.round(
+            Number(control.severity || 0) * 100,
+          )}% severity`,
+        )
+      }
+    } catch (error) {
+      console.error(error)
+      setSimulationMessage('Could not reach simulation control API')
+    } finally {
+      setSimulationBusy(false)
+    }
   }
 
   useEffect(() => {
@@ -373,6 +420,87 @@ function App() {
               <strong>{state.maintenance?.priority || 'MONITOR'}</strong>
             </div>
           </article>
+        </section>
+
+        <section className="simulation-panel panel">
+          <div className="section-heading">
+            <div>
+              <span className="section-kicker">DEVELOPMENT TEST CONTROLS</span>
+              <h2>Simulation Control</h2>
+            </div>
+            <span className={simulationFault === 'normal' ? 'signal good' : 'signal danger'}>
+              {simulationFault === 'normal' ? 'NORMAL' : 'FAULT ACTIVE'}
+            </span>
+          </div>
+
+          <div className="simulation-control-grid">
+            <label className="control-field">
+              <span>Fault scenario</span>
+              <select
+                value={simulationFault}
+                onChange={event => setSimulationFault(event.target.value)}
+                disabled={simulationBusy}
+              >
+                <option value="normal">Normal / Healthy</option>
+                <option value="lubrication">Lubrication degradation</option>
+                <option value="overheating">Overheating</option>
+                <option value="vibration">Abnormal vibration</option>
+                <option value="sensor_drift">Sensor drift</option>
+              </select>
+            </label>
+
+            <label className="control-field severity-field">
+              <span>
+                Severity
+                <strong>{simulationFault === 'normal' ? '0%' : `${simulationSeverity}%`}</strong>
+              </span>
+              <input
+                type="range"
+                min="10"
+                max="100"
+                step="5"
+                value={simulationSeverity}
+                disabled={simulationBusy || simulationFault === 'normal'}
+                onChange={event => setSimulationSeverity(Number(event.target.value))}
+              />
+              <div className="range-scale">
+                <span>Low</span>
+                <span>Moderate</span>
+                <span>Severe</span>
+              </div>
+            </label>
+
+            <div className="simulation-actions">
+              <button
+                className="control-button inject"
+                disabled={simulationBusy || simulationFault === 'normal'}
+                onClick={() =>
+                  sendSimulationControl(simulationFault, simulationSeverity)
+                }
+              >
+                {simulationBusy ? 'APPLYING…' : 'INJECT FAULT'}
+              </button>
+
+              <button
+                className="control-button reset"
+                disabled={simulationBusy}
+                onClick={() => {
+                  setSimulationFault('normal')
+                  sendSimulationControl('normal', 0)
+                }}
+              >
+                RESET HEALTHY
+              </button>
+            </div>
+          </div>
+
+          <div className="simulation-status-line">
+            <span className={simulationFault === 'normal' ? 'status-dot live' : 'status-dot offline'} />
+            <span>{simulationMessage}</span>
+            <span className="simulation-disclaimer">
+              Synthetic test control · not a physical engine command
+            </span>
+          </div>
         </section>
 
         <section className="metrics-grid">
