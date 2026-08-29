@@ -1,10 +1,9 @@
 FROM python:3.12-slim
-
-WORKDIR /project
-COPY backend/requirements.txt ./backend/requirements.txt
-RUN pip install --no-cache-dir -r backend/requirements.txt
-
-COPY backend ./backend
-COPY models ./models
-
-CMD ["uvicorn", "backend.app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+WORKDIR /app
+COPY backend/requirements.txt /app/requirements.txt
+RUN pip install --no-cache-dir -r /app/requirements.txt
+COPY backend /app/backend
+COPY models /app/models
+COPY data /app/data
+ENV PYTHONPATH=/app/backend MODEL_DIR=/app/models
+CMD ["uvicorn","app.main:app","--host","0.0.0.0","--port","8000"]

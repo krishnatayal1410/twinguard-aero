@@ -1,0 +1,8 @@
+{
+  "fault_accuracy": 0.9339045287637698,
+  "fault_macro_f1": 0.9330504398639075,
+  "rul_mae": 12.453609856583103,
+  "rul_rmse": 15.124490759838118,
+  "rul_r2": 0.6695239529713779,
+  "note": "Synthetic proof-of-concept metrics only; not real-engine validation."
+}

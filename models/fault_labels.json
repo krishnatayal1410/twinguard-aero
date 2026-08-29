@@ -1,0 +1,10 @@
+[
+  "normal",
+  "lubrication",
+  "overheating",
+  "vibration",
+  "sensor_drift",
+  "injector",
+  "misfire",
+  "turbine_blade_degradation"
+]

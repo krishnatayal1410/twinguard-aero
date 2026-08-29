@@ -1,0 +1,10 @@
+{
+  "checks": {
+    "SearchMinus/SearchPlus removed": true,
+    "replaceAll removed": true,
+    "Array.at removed": true,
+    "async Settings useEffect fixed": true,
+    "TS syntax": true
+  },
+  "typescript_syntax_output": "files=18 errors=0"
+}

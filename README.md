@@ -1,125 +1,192 @@
-# TwinGuard Aero
+# TwinGuard Aero — Exact Screenshot Dashboard Final
 
-TwinGuard Aero is an engineering-first software prototype for Digital Twin based health monitoring and prognostics of a UAV aero-piston engine.
+This is the complete standalone TwinGuard Aero project built around `docs/MASTER_UI_REFERENCE.png`.
 
-## What this starter already contains
+The Command Center deliberately follows that reference composition: the same light white/blue visual system, left navigation rail, top telemetry bar, large exploded turboshaft hero, UAV System View, AI Decision Center, seven telemetry cards, Mission Lab, Mission Replay, Diagnostics / Explainability and the bottom Simulator strip.
 
-- UAV engine simulator [Python]
-- controllable synthetic fault scenarios [Python]
-- telemetry schema [Python/Pydantic]
-- FastAPI backend [Python]
-- SQLite history [SQL]
-- WebSocket live state
-- Digital Twin state service [Python]
-- simplified expected-behavior/physics model [Python]
-- physics residuals [Python]
-- transparent health score [Python]
-- sensor-trust baseline [Python]
-- maintenance recommendation baseline [Python]
-- mission-stress simulator [Python]
-- Isolation Forest training pipeline [Python/scikit-learn]
-- XGBoost fault-classifier training pipeline [Python/C++]
-- XGBoost synthetic RUL training pipeline [Python/C++]
-- React dashboard [TypeScript]
-- Docker starter
-- GitHub Actions CI [YAML]
-- tests and project documentation
+## Frontend
+- React [TypeScript]
+- Vite [JavaScript/TypeScript]
+- Three.js [JavaScript/TypeScript]
+- React Three Fiber [TypeScript]
+- Drei [TypeScript]
+- Framer Motion [TypeScript/JavaScript]
+- Plotly.js [JavaScript/TypeScript]
+- Zustand [TypeScript]
+- Axios [TypeScript/JavaScript]
 
-> The simulator, health formula, mission model and initial ML data are synthetic proof-of-concept components. They are not calibrated to a real DRDO engine and must not be presented as certified aerospace predictions.
+The 3D engine uses an original generic turboshaft GLB with hundreds of independently addressable parts. The dashboard initially matches the supplied reference visual; touching Rotate / Explode / X-Ray / fullscreen switches the hero into the fully interactive WebGL model.
 
-## Repository structure
+3D features:
+- Rotate / orbit / zoom
+- Explode / assemble
+- X-ray
+- Fullscreen
+- Fan, compressor, combustor, turbine and exhaust modules
+- Animated rotor stages
+- Blue energy rings
+- Component clicking
+- Health-dependent state coloring
+- Live telemetry-driven condition visualization
 
-```text
-twinguard-aero/
-├── ai/                 # ML feature/training code
-├── backend/            # FastAPI + Twin + DB
-├── data/               # generated synthetic data
-├── docs/               # team plan, validation, roadmap
-├── frontend/           # React dashboard
-├── models/             # generated model artifacts
-├── notebooks/          # experiments
-├── scripts/            # verification helpers
-├── simulator/          # engine/fault simulator
-├── tests/              # automated tests
-└── .github/workflows/  # CI
-```
+## Backend / Digital Twin
+- FastAPI [Python]
+- Pydantic [Python]
+- SQLAlchemy [Python]
+- synthetic engine simulator [Python]
+- simplified physics / residual model [Python]
+- Sensor Trust [Python]
+- Data Quality [Python]
+- health engine [Python]
+- confidence fusion [Python]
+- Isolation Forest [Python/scikit-learn]
+- XGBoost fault classifier [Python/C++]
+- XGBoost RUL regressor [Python/C++]
+- explainability / evidence engine [Python]
+- predictive maintenance [Python]
+- Mission Lab / mission-aware RUL [Python]
+- counterfactual mission planning [Python]
+- Mission Replay and event timeline [Python]
 
-## Core stack
+The model pack includes the dashboard simulator scenario `turbine_blade_degradation` in addition to lubrication, overheating, vibration, sensor drift, injector and misfire scenarios.
 
-Python 3.12 [Python], NumPy [Python], Pandas [Python], SciPy [Python], scikit-learn [Python], XGBoost [Python/C++], SHAP [Python], FastAPI [Python], Pydantic [Python], SQLAlchemy [Python], SQLite [SQL], React [TypeScript], Vite [JavaScript/TypeScript], WebSocket, Docker, Git/GitHub.
+## Data / integrations
+- SQLite [SQL] local runtime
+- PostgreSQL [SQL] deployment
+- TimescaleDB [SQL/PostgreSQL extension] deployment
+- MQTT / Eclipse Mosquitto [C] / Paho MQTT [Python]
+- CAN / SocketCAN [Linux/C] / python-can [Python] / cantools [Python]
+- Unreal Engine UDP JSON + WebSocket bridge
 
-## 1. Install backend dependencies
+## Deployment
+- Docker
+- Docker Compose [YAML]
+- Nginx
+- local macOS launcher
+- debugging and security scripts
 
-From repository root:
+## Start on macOS
+
+Extract the folder to Desktop, then:
 
 ```bash
-python -m venv .venv
+cd ~/Desktop/TwinGuard_Aero_Exact_Screenshot_Final
+chmod +x START_TWINGUARD.command scripts/*.sh
+./START_TWINGUARD.command
 ```
 
-Windows:
+Open:
+- Dashboard: `http://localhost:5173`
+- Backend: `http://127.0.0.1:8000`
+- Swagger: `http://127.0.0.1:8000/docs`
 
-```powershell
-.venv\Scripts\activate
-```
+Do not press `Ctrl+C` during the first dependency installation.
 
-Linux/macOS:
+## Verify the system
 
 ```bash
+cd ~/Desktop/TwinGuard_Aero_Exact_Screenshot_Final
 source .venv/bin/activate
+export PYTHONPATH="$PWD/backend"
+export TWINGUARD_INGEST_KEY="$(cat .runtime/ingest.key)"
+python scripts/verify_system.py
 ```
 
-Then:
+The verifier checks backend state, Digital Twin state, diagnostics, system status, maintenance, Mission Lab, turbine-blade-degradation simulation and Mission Replay.
+
+## Debug
 
 ```bash
-pip install -r backend/requirements.txt
+bash scripts/doctor.sh
 ```
 
-## 2. Verify backend
+Logs are stored in:
+- `.runtime/logs/backend.log`
+- `.runtime/logs/frontend.log`
+- `.runtime/logs/simulator.log`
+
+## Security
 
 ```bash
-python scripts/verify_backend.py
+bash scripts/security_check.sh
 ```
 
-## 3. Start backend
+Included defaults:
+- explicit CORS allowlist
+- trusted-host validation
+- telemetry ingest key
+- strict Pydantic validation
+- request-size cap
+- Nginx Content Security Policy
+- loopback-only local service binding
+- no embedded private keys / real CAN IDs
+
+Automated checks cannot prove that a system has zero vulnerabilities. Before internet-facing or real-engine operation, add organizational authentication/authorization, TLS/mTLS, managed secrets, network segmentation, dependency CVE scans, SAST/DAST, penetration testing, audit logging and an appropriate aerospace cybersecurity review.
+
+## Important engineering limitation
+
+The included telemetry, physics equations, AI metrics, RUL and maintenance outputs are synthetic proof-of-concept outputs. The 3D model is an original generic visualization, not proprietary manufacturer/DRDO CAD. Engine-specific calibration and authorized test-rig validation are required before operational use.
+
+
+## True-3D corrections
+
+This final build removes the old image-to-model swap. The engine is WebGL from the first frame and remains the same object while rotating, exploding, assembling, zooming, entering X-Ray mode or fullscreen. The UAV System View and Mission Replay previews are also live 3D scenes.
+
+## Final visible-3D + authentication update
+
+This build removes the black 3D rendering issue seen on Safari by replacing reflection-dependent physical materials with a lit Phong material pipeline, DoubleSide rendering and explicit ambient/key/fill lights. Rotate, Explode/Assemble, X-Ray, zoom, reset and fullscreen continue to operate on the same engine object.
+
+Authentication is now built in:
+- Sign Up
+- Sign In
+- Sign Out
+- persistent local operator sessions
+- first registered account receives `admin`; later accounts receive `operator`
+- PBKDF2-SHA256 password hashing
+- random server-side session tokens
+- 7-day session expiration
+- authenticated Digital Twin, Diagnostics, Mission Lab, Replay, Simulation, Maintenance and System Status endpoints
+
+The telemetry ingest API remains separate and requires the TwinGuard ingest key.
+
+
+## Pro Visible 3D Final Pass
+
+This build specifically fixes the black-engine / black-UAV rendering seen on Safari.
+
+### Rendering changes
+- The engine and UAV now use bundled **matcap shading textures**.
+- Matcap shading does not depend on HDR environment maps, browser reflections, or Safari lighting behavior.
+- The same WebGL engine remains on screen for Rotate, Explode/Assemble, Zoom, Reset, X-Ray and Fullscreen.
+- The UAV System View remains a real interactive 3D model.
+- The UAV landing gear is hidden in the flight-context view to keep the aircraft silhouette clean.
+- Engine and UAV geometry are forced to DoubleSide and have vertex normals recomputed at runtime.
+- No screenshot overlay is used for the engine or UAV.
+
+### Readability changes
+- Larger sidebar/navigation.
+- Larger top-bar controls.
+- Larger engine and UAV viewports.
+- Larger telemetry values.
+- Larger simulator controls.
+- Larger Diagnostics, Mission Lab, Replay, Maintenance and Settings typography.
+
+### Authentication
+The existing local account system remains enabled:
+- Sign Up
+- Sign In
+- Sign Out
+- operator/admin profile menu
+- PBKDF2-SHA256 password hashing
+- expiring server-side sessions
+- protected Digital Twin / mission / replay / maintenance APIs
+
+## Start
 
 ```bash
-uvicorn backend.app.main:app --reload
+cd ~/Desktop/TwinGuard_Aero_ProVisible3D_Final
+chmod +x START_TWINGUARD.command scripts/*.sh
+./START_TWINGUARD.command
 ```
 
-Open `http://localhost:8000/docs`.
-
-## 4. Start simulator
-
-In a second terminal:
-
-```bash
-python simulator/run_simulator.py
-```
-
-## 5. Start frontend
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-Open `http://localhost:5173`.
-
-## 6. Generate synthetic training data and models
-
-From repository root:
-
-```bash
-python ai/train_all.py
-```
-
-Then restart the backend or call:
-
-```text
-POST /models/reload
-```
-
-## Tomorrow
-
-Read `docs/START_TOMORROW.md`.
+Wait until the terminal prints `TwinGuard Aero is running`, then open `http://localhost:5173`.

@@ -1,22 +1,68 @@
 services:
+  timescaledb:
+    image: timescale/timescaledb:latest-pg16
+    environment:
+      POSTGRES_DB: twinguard
+      POSTGRES_USER: twinguard
+      POSTGRES_PASSWORD: twinguard_dev
+    ports: ["127.0.0.1:5432:5432"]
+    volumes:
+      - timescale_data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/001-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL","pg_isready -U twinguard -d twinguard"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  mosquitto:
+    image: eclipse-mosquitto:2
+    ports: ["127.0.0.1:1883:1883"]
+    volumes:
+      - ./deploy/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - mosquitto_data:/mosquitto/data
+
   backend:
     build:
       context: .
       dockerfile: backend/Dockerfile
-    ports:
-      - "8000:8000"
     environment:
-      DATABASE_URL: sqlite:////project/twinguard.db
-    volumes:
-      - ./models:/project/models
-    restart: unless-stopped
+      DATABASE_URL: postgresql+psycopg://twinguard:twinguard_dev@timescaledb:5432/twinguard
+      MODEL_DIR: /app/models
+      TWINGUARD_INGEST_KEY: ${TWINGUARD_INGEST_KEY:-local-docker-demo-change-me}
+      CORS_ORIGINS: http://localhost:5173,http://127.0.0.1:5173
+      TRUSTED_HOSTS: localhost,127.0.0.1,backend
+      MQTT_ENABLED: "1"
+      MQTT_HOST: mosquitto
+      MQTT_PORT: "1883"
+      MQTT_TOPIC: twinguard/engine/+/telemetry
+    ports: ["127.0.0.1:8000:8000"]
+    depends_on:
+      timescaledb: {condition: service_healthy}
+      mosquitto: {condition: service_started}
+
+  simulator:
+    build:
+      context: .
+      dockerfile: simulator/Dockerfile
+    environment:
+      SIM_TRANSPORT: mqtt
+      MQTT_HOST: mosquitto
+      MQTT_PORT: "1883"
+      TWINGUARD_API: http://backend:8000
+      TWINGUARD_INGEST_KEY: ${TWINGUARD_INGEST_KEY:-local-docker-demo-change-me}
+    depends_on:
+      backend: {condition: service_started}
+      mosquitto: {condition: service_started}
 
   frontend:
     build:
       context: .
       dockerfile: frontend/Dockerfile
-    ports:
-      - "5173:5173"
+    ports: ["127.0.0.1:5173:80"]
     depends_on:
-      - backend
-    restart: unless-stopped
+      backend: {condition: service_started}
+
+volumes:
+  timescale_data:
+  mosquitto_data:

@@ -1,39 +1,33 @@
-from ..schemas.telemetry import Telemetry
+from __future__ import annotations
+from typing import Dict
 
+class PhysicsEngine:
+    """Low-order, explainable aero-piston surrogate physics for MVP use.
 
-def expected_state(t: Telemetry) -> dict[str, float]:
+    These equations are intentionally generic and must be calibrated to the
+    actual engine/test-rig before operational use.
     """
-    Lightweight MVP expected-behavior model.
+    def expected(self, t: dict) -> Dict[str,float]:
+        rpm = float(t["rpm"]); throttle=float(t["throttle"])
+        altitude=float(t["altitude"]); ambient=float(t["ambient_temperature"])
+        oil_t=float(t["oil_temperature"])
+        load = throttle/100.0
+        density_factor=max(0.58, 1.0-altitude/21000.0)
+        cht = ambient + 105 + 58*load + 0.0048*(rpm-2500) + 10*(1-density_factor)
+        egt = 500 + 250*load + 0.015*(rpm-2500) + 16*(1-density_factor)
+        oil_pressure = 3.0 + 0.00046*rpm - 0.018*max(oil_t-85,0)
+        oil_temperature = ambient + 48 + 46*load + 0.002*(rpm-2500)
+        fuel_flow = 5.2 + 0.0022*rpm + 7.2*load/density_factor
+        vibration = 0.16 + abs(rpm-3900)/11000 + 0.07*load
+        battery_voltage = 27.6 + 0.25*min(1,rpm/2500)
+        return {
+            "cht": cht, "egt": egt, "oil_pressure": oil_pressure,
+            "oil_temperature": oil_temperature, "fuel_flow": fuel_flow,
+            "vibration": vibration, "battery_voltage": battery_voltage,
+        }
 
-    These equations are intentionally simplified and are NOT calibrated
-    engine-specific aerospace equations. They exist to demonstrate the
-    Digital Twin architecture until real performance maps/test-rig data exist.
-    """
-    throttle_fraction = t.throttle / 100.0
-    altitude_factor = min(t.altitude / 10000.0, 1.5)
-
-    expected_cht = 120 + 75 * throttle_fraction + 0.10 * t.ambient_temp + 8 * altitude_factor
-    expected_egt = 500 + 250 * throttle_fraction + 18 * altitude_factor
-    expected_oil_pressure = max(
-        2.5,
-        4.8 - 0.006 * (t.oil_temp - 80) + 0.00005 * t.rpm,
-    )
-    expected_fuel_flow = max(0.5, 2.0 + 22 * throttle_fraction)
-
-    return {
-        "cht": round(expected_cht, 3),
-        "egt": round(expected_egt, 3),
-        "oil_pressure": round(expected_oil_pressure, 3),
-        "fuel_flow": round(expected_fuel_flow, 3),
-    }
-
-
-def residuals(t: Telemetry, expected: dict[str, float]) -> dict[str, float]:
-    return {
-        "cht_residual": round(t.cht - expected["cht"], 3),
-        "egt_residual": round(t.egt - expected["egt"], 3),
-        "oil_pressure_residual": round(
-            t.oil_pressure - expected["oil_pressure"], 3
-        ),
-        "fuel_flow_residual": round(t.fuel_flow - expected["fuel_flow"], 3),
-    }
+    def residuals(self, t: dict, e: dict) -> Dict[str,float]:
+        out={}
+        for k in ("cht","egt","oil_pressure","oil_temperature","fuel_flow","vibration","battery_voltage"):
+            out[f"{k}_residual"] = float(t[k])-float(e[k])
+        return out

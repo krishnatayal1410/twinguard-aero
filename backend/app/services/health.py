@@ -1,45 +1,18 @@
-def clamp(value: float, low: float = 0.0, high: float = 100.0) -> float:
-    return max(low, min(high, value))
+from __future__ import annotations
+def _c(v): return max(0,min(100,float(v)))
 
+class HealthEngine:
+    def compute(self,t,r,trust):
+        thermal=_c(99 - abs(r["cht_residual"])*0.75 - abs(r["egt_residual"])*0.18 - max(0,t["cht"]-215)*.45)
+        lube=_c(99 - max(0,-r["oil_pressure_residual"])*22 - max(0,r["oil_temperature_residual"])*.65 - max(0,90-trust["oil_pressure"])*.20)
+        mech=_c(99 - max(0,t["vibration"]-.27)*65 - abs(r["vibration_residual"])*28)
+        elec=_c(99 - abs(r["battery_voltage_residual"])*8)
+        overall=.31*thermal+.31*lube+.27*mech+.11*elec
+        return {"thermal":thermal,"lubrication":lube,"mechanical":mech,"electrical":elec,"overall":overall}
 
-def calculate_health(
-    telemetry: dict,
-    residuals: dict,
-    anomaly_score: float = 0.0,
-) -> dict[str, float]:
-    """
-    Explainable MVP health index.
-
-    This is a documented prototype score, not an aerospace-certified health
-    index. The weights must later be calibrated against real engine data.
-    """
-    thermal_penalty = min(35, abs(residuals.get("cht_residual", 0)) * 1.2)
-    lubrication_penalty = min(
-        45,
-        abs(min(residuals.get("oil_pressure_residual", 0), 0)) * 30,
-    )
-    mechanical_penalty = min(
-        45,
-        max(0, telemetry.get("vibration", 0) - 0.25) * 100,
-    )
-    anomaly_penalty = min(20, max(0, anomaly_score) * 20)
-
-    thermal = clamp(100 - thermal_penalty)
-    lubrication = clamp(100 - lubrication_penalty)
-    mechanical = clamp(100 - mechanical_penalty)
-    electrical = clamp(
-        100 - max(0, 25 - telemetry.get("battery_voltage", 27)) * 6
-    )
-
-    overall = clamp(
-        (thermal + lubrication + mechanical + electrical) / 4
-        - anomaly_penalty
-    )
-
-    return {
-        "overall": round(overall, 1),
-        "thermal": round(thermal, 1),
-        "lubrication": round(lubrication, 1),
-        "mechanical": round(mechanical, 1),
-        "electrical": round(electrical, 1),
-    }
+def readiness(health, ai, maintenance):
+    if health["overall"]<67 or maintenance["priority"]=="NO_GO":
+        return {"status":"NO_GO","label":"NO-GO","reason":"Current predicted engine condition is not suitable for mission release."}
+    if ai.get("anomaly") or health["overall"]<86 or maintenance["priority"]=="INSPECT_BEFORE_NEXT_MISSION":
+        return {"status":"REVIEW","label":"REVIEW","reason":"Engineering review is recommended before mission release."}
+    return {"status":"READY","label":"READY","reason":"Current synthetic twin state is within nominal mission-release limits."}

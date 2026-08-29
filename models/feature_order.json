@@ -1,0 +1,18 @@
+[
+  "rpm",
+  "throttle",
+  "cht",
+  "egt",
+  "oil_pressure",
+  "oil_temperature",
+  "fuel_flow",
+  "vibration",
+  "altitude",
+  "ambient_temperature",
+  "cht_residual",
+  "egt_residual",
+  "oil_pressure_residual",
+  "oil_temperature_residual",
+  "fuel_flow_residual",
+  "vibration_residual"
+]
