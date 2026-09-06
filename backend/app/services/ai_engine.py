@@ -8,41 +8,15 @@ import joblib
 import numpy as np
 
 FEATURES = [
-    "rpm",
-    "throttle",
-    "cht",
-    "egt",
-    "oil_pressure",
-    "oil_temperature",
-    "fuel_flow",
-    "vibration",
-    "battery_voltage",
-    "alternator_voltage",
-    "injection_timing",
-    "altitude",
-    "ambient_temperature",
-    "cht_residual",
-    "egt_residual",
-    "oil_pressure_residual",
-    "oil_temperature_residual",
-    "fuel_flow_residual",
-    "vibration_residual",
-    "battery_voltage_residual",
-    "alternator_voltage_residual",
-    "injection_timing_residual",
+    "rpm", "throttle", "cht", "egt", "oil_pressure", "oil_temperature", "fuel_flow", "vibration",
+    "battery_voltage", "alternator_voltage", "injection_timing", "altitude", "ambient_temperature",
+    "cht_residual", "egt_residual", "oil_pressure_residual", "oil_temperature_residual", "fuel_flow_residual",
+    "vibration_residual", "battery_voltage_residual", "alternator_voltage_residual", "injection_timing_residual",
 ]
 
 SUPPORTED_LABELS = [
-    "normal",
-    "lubrication",
-    "overheating",
-    "cooling_degradation",
-    "vibration",
-    "sensor_drift",
-    "injector",
-    "misfire",
-    "combustion_instability",
-    "alternator_degradation",
+    "normal", "lubrication", "overheating", "cooling_degradation", "vibration", "sensor_drift",
+    "injector", "misfire", "combustion_instability", "alternator_degradation",
 ]
 
 
@@ -74,21 +48,26 @@ class AIEngine:
         except Exception:
             self.synthetic_metrics = {}
 
-        features_match = self.artifact_features == FEATURES
-        labels_match = self.labels == SUPPORTED_LABELS
-        artifacts_compatible = features_match and labels_match
+        self.features_match = self.artifact_features == FEATURES
+        self.labels_match = self.labels == SUPPORTED_LABELS
+        self.artifacts_compatible = self.features_match and self.labels_match
+        self.artifact_files = {
+            "anomaly": (model_path / "anomaly_model.joblib").exists(),
+            "fault": (model_path / "fault_model.joblib").exists(),
+            "rul": (model_path / "rul_model.joblib").exists(),
+        }
 
-        self.anomaly = safe("anomaly_model.joblib") if features_match else None
-        self.native_ml = self.native_ml_requested and artifacts_compatible
+        self.anomaly = safe("anomaly_model.joblib") if self.features_match else None
+        self.native_ml = self.native_ml_requested and self.artifacts_compatible
         self.fault = safe("fault_model.joblib") if self.native_ml else None
         self.rul = safe("rul_model.joblib") if self.native_ml else None
 
         warnings = []
-        if not features_match and self.artifact_features:
+        if not self.features_match and self.artifact_features:
             warnings.append("Packaged models use an older feature contract")
-        if not labels_match and self.labels:
+        if not self.labels_match and self.labels:
             warnings.append("packaged classifier uses an older fault taxonomy")
-        if self.native_ml_requested and not artifacts_compatible:
+        if self.native_ml_requested and not self.artifacts_compatible:
             warnings.append("native ML was requested but incompatible artifacts were rejected")
         self.model_warning = "; ".join(warnings) + ". Retrain the synthetic model pack before enabling native ML." if warnings else None
 
@@ -163,14 +142,24 @@ class AIEngine:
             "model_warning": self.model_warning,
         }
 
-    def _rul_interval(self, estimate, basis, trends, anomaly_score):
-        """Return a conservative POC uncertainty band around RUL.
+    def runtime_status(self):
+        return {
+            "active_mode": "NATIVE_ML" if self.native_ml and self.fault is not None and self.rul is not None else "ENGINEERING_FALLBACK",
+            "native_ml_requested": self.native_ml_requested,
+            "artifact_contract_compatible": self.artifacts_compatible,
+            "feature_contract": "aero-piston-v2",
+            "packaged_artifacts": dict(self.artifact_files),
+            "active_models": {
+                "anomaly": self.anomaly is not None,
+                "fault": self.fault is not None,
+                "rul": self.rul is not None,
+            },
+            "synthetic_metrics_available": bool(self.synthetic_metrics),
+            "validation_scope": "SYNTHETIC_PROOF_OF_CONCEPT",
+            "warning": self.model_warning,
+        }
 
-        This is intentionally not presented as a calibrated statistical
-        confidence interval. For the packaged synthetic regressor we anchor the
-        band to its synthetic RMSE. For the engineering surrogate we use a
-        wider fractional band. Current degradation dynamics widen both bands.
-        """
+    def _rul_interval(self, estimate, basis, trends, anomaly_score):
         estimate = max(0.0, float(estimate))
         if basis == "synthetic_xgboost_regressor":
             rmse = float(self.synthetic_metrics.get("rul_rmse", 12.5) or 12.5)
@@ -179,7 +168,6 @@ class AIEngine:
         else:
             base_half_width = max(20.0, estimate * .24)
             interval_basis = "engineering_surrogate_conservative_band"
-
         trend_load = (
             abs(float(trends.get("health_index_per_min", 0.0))) * .55
             + abs(float(trends.get("oil_pressure_per_min", 0.0))) * 2.4
@@ -197,13 +185,9 @@ class AIEngine:
 
     def _engineering_anomaly(self, t, r, trends):
         residual_evidence = (
-            abs(r["cht_residual"]) / 35
-            + abs(r["egt_residual"]) / 80
-            + abs(r["oil_pressure_residual"]) / 1.5
-            + max(0, t["vibration"] - .3) / .7
-            + abs(r.get("battery_voltage_residual", 0)) / 2.2
-            + abs(r.get("alternator_voltage_residual", 0)) / 2.5
-            + abs(r.get("injection_timing_residual", 0)) / 3.0
+            abs(r["cht_residual"]) / 35 + abs(r["egt_residual"]) / 80 + abs(r["oil_pressure_residual"]) / 1.5
+            + max(0, t["vibration"] - .3) / .7 + abs(r.get("battery_voltage_residual", 0)) / 2.2
+            + abs(r.get("alternator_voltage_residual", 0)) / 2.5 + abs(r.get("injection_timing_residual", 0)) / 3.0
         )
         trend_evidence = (
             max(0, -float(trends.get("oil_pressure_per_min", 0))) / 1.3
@@ -249,12 +233,8 @@ class AIEngine:
             + max(0, float(trends.get("cht_per_min", 0))) * .25
         )
         penalty = (
-            abs(r["cht_residual"]) * .6
-            + abs(r["egt_residual"]) * .15
-            + max(0, -r["oil_pressure_residual"]) * 24
-            + max(0, t["vibration"] - .3) * 85
-            + max(0, -r.get("alternator_voltage_residual", 0)) * 5
-            + worsening
+            abs(r["cht_residual"]) * .6 + abs(r["egt_residual"]) * .15 + max(0, -r["oil_pressure_residual"]) * 24
+            + max(0, t["vibration"] - .3) * 85 + max(0, -r.get("alternator_voltage_residual", 0)) * 5 + worsening
         )
         return max(8.0, 190 - penalty - float(t.get("operating_hours", 0)) * .08)
 
