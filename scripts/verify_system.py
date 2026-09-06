@@ -53,22 +53,36 @@ time.sleep(2)
 
 def twin_check():
     state=get("/api/v1/twin/ENGINE-01")
+    assert state["engine_id"]=="ENGINE-01"
     assert 0<=state["health"]["overall"]<=100
     assert state["twin_meta"]["physics_model"]=="generic-aero-piston-surrogate-v2"
     assert "oil_pressure_per_min" in state["trends"]
+    assert "health_index_per_min" in state["trends"]
+    for key in ("cht_residual","egt_residual","oil_pressure_residual","oil_temperature_residual","vibration_residual"):
+        assert key in state["residuals"]
+    assert isinstance(state.get("events"),list)
     interval=state["ai"]["rul_interval_hours"]
     assert 0<=interval["lower"]<=interval["estimate"]<=interval["upper"]
     assert interval["calibrated_probability_interval"] is False
+    assert 0<=state["ai"]["fault_confidence"]<=1
     validity=state["runtime_validity"]
     assert validity["stale"] is False
     assert validity["decision_eligible"] is True
-check("Synchronized uncertainty-aware Digital Twin",twin_check)
+check("Synchronized canonical Digital Twin contract",twin_check)
 
-check("Diagnostics",lambda:get("/api/v1/diagnostics/ENGINE-01")["confidence"]["decision"]>=0)
+
+def diagnostics_check():
+    result=get("/api/v1/diagnostics/ENGINE-01")
+    assert result["confidence"]["decision"]>=0
+    assert "events" in result
+    assert "oil_pressure_residual" in result["residuals"]
+check("Diagnostics + event history",diagnostics_check)
 
 
 def status_check():
     status=get("/api/v1/system/status")
+    assert status["version"]=="3.2.0"
+    assert status["engine_id"]=="ENGINE-01"
     assert status["security"]["trusted_hosts"]
     assert status["telemetry"]["available"] is True
     assert status["telemetry"]["stale"] is False
@@ -114,10 +128,12 @@ def lubrication_fault():
     detected=False
     degraded_margin=None
     degraded_feasibility=None
+    event_seen=False
     try:
         while time.time()<deadline:
             time.sleep(1)
             state=get("/api/v1/twin/ENGINE-01")
+            event_seen=event_seen or any(e.get("type") in {"ANOMALY_DETECTED","FAULT_IDENTIFIED"} for e in state.get("events",[]))
             if state["ai"]["anomaly"] and state["health"]["lubrication"]<85:
                 degraded=post("/api/v1/mission/analyze",MISSION)
                 degraded_margin=degraded["mission_margin_hours"]
@@ -127,6 +143,7 @@ def lubrication_fault():
     finally:
         post("/api/v1/simulation/reset")
     assert detected,"progressive lubrication scenario did not become observable within 45 s"
+    assert event_seen,"real Twin event history did not capture degradation transition"
     assert degraded_margin is not None and degraded_feasibility is not None
     assert degraded_margin<baseline_margin,"degraded engine did not reduce mission margin"
     assert degraded_feasibility<=baseline_feasibility,"degraded engine did not reduce mission feasibility"
@@ -134,9 +151,14 @@ check("Aero-piston degradation changes mission reliability",lubrication_fault)
 
 
 def replay():
-    post("/api/v1/replay/start",{"label":"Automated Verification"});time.sleep(2)
-    assert post("/api/v1/replay/end")["status"]=="COMPLETED"
-check("Mission Replay",replay)
+    started=post("/api/v1/replay/start",{"label":"Automated Verification"})
+    time.sleep(3)
+    completed=post("/api/v1/replay/end")
+    assert completed["status"]=="COMPLETED"
+    samples=get(f"/api/v1/replay/missions/{started['id']}/samples")
+    assert len(samples)>=1
+    assert {"timestamp","health","rul","cht","oil_pressure","vibration","anomaly","fault","maintenance"}<=set(samples[-1])
+check("Mission Replay persisted samples",replay)
 
 try:post("/api/v1/auth/signout")
 except Exception:pass
