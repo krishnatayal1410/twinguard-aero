@@ -36,12 +36,43 @@ def test_twin_pipeline():
     assert "priority" in state["maintenance"]
 
 
+def test_rul_interval_is_ordered_and_explicitly_uncalibrated():
+    state = manager.ingest(sample())
+    interval = state["ai"]["rul_interval_hours"]
+    assert 0 <= interval["lower"] <= interval["estimate"] <= interval["upper"]
+    assert interval["calibrated_probability_interval"] is False
+    assert state["ai"]["rul_uncertainty_hours"] > 0
+
+
 def test_mission_analysis_direction():
     state = manager.ingest(sample())
     result = manager.mission.analyze(state, MissionRequest())
     assert result["overall_risk"] in {"LOW", "MEDIUM", "HIGH"}
     assert result["post_mission_health"] < result["current_health"]
     assert result["post_mission_rul_hours"] < result["current_rul_hours"]
+    assert result["decision_horizon_hours"] >= 0
+    assert result["engineering_reserve_hours"] > 0
+    assert result["current_rul_interval_hours"]["lower"] <= result["current_rul_hours"] <= result["current_rul_interval_hours"]["upper"]
+    assert result["post_mission_rul_interval_hours"]["lower"] <= result["post_mission_rul_hours"] <= result["post_mission_rul_interval_hours"]["upper"]
+    assert result["conservative_rul_margin_ratio"] <= result["rul_margin_ratio"]
+    assert result["lower_stress_alternative"]["projected_stress_index"] <= result["stress_index"]
+
+
+def test_degraded_state_reduces_mission_margin():
+    healthy = manager.ingest(sample())
+    healthy_result = manager.mission.analyze(healthy, MissionRequest())
+
+    degraded = sample()
+    degraded["oil_pressure"] = 2.8
+    degraded["oil_temperature"] = 132
+    degraded["vibration"] = .56
+    degraded["cht"] = 205
+    degraded_state = manager.ingest(degraded)
+    degraded_result = manager.mission.analyze(degraded_state, MissionRequest())
+
+    assert degraded_result["current_health"] < healthy_result["current_health"]
+    assert degraded_result["mission_margin_hours"] < healthy_result["mission_margin_hours"]
+    assert degraded_result["mission_feasibility_index"] <= healthy_result["mission_feasibility_index"]
 
 
 def test_lubrication_degradation_is_multi_signal_and_not_just_bad_sensor():
@@ -52,8 +83,6 @@ def test_lubrication_degradation_is_multi_signal_and_not_just_bad_sensor():
     state = manager.ingest(telemetry)
     assert state["residuals"]["oil_pressure_residual"] < -1.0
     assert state["health"]["lubrication"] < 75
-    # Corroborating oil temperature/vibration should preserve more trust than an
-    # isolated implausible oil-pressure channel would receive.
     physical_fault_trust = state["sensor_trust"]["oil_pressure"]
 
     isolated = sample()
