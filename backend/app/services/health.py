@@ -64,7 +64,17 @@ class HealthEngine:
         }
 
 
-def readiness(health, ai, maintenance):
+def readiness(health, ai, maintenance, data_quality=None):
+    quality = data_quality or {}
+    quality_score = float(quality.get("overall", 100.0))
+    quality_label = str(quality.get("label", "GOOD"))
+
+    if quality_score < 70 or quality_label == "POOR" or health.get("sensor", 100) < 55:
+        return {
+            "status": "DATA_HOLD",
+            "label": "DATA HOLD",
+            "reason": "Current telemetry quality or sensor integrity is insufficient for a new mission-release assessment. Verify the data path before using the Twin for decision support.",
+        }
     if health["overall"] < 67 or maintenance["priority"] == "NO_GO":
         return {
             "status": "NO_GO",
@@ -80,5 +90,5 @@ def readiness(health, ai, maintenance):
     return {
         "status": "READY",
         "label": "READY",
-        "reason": "Current synthetic twin state is within the demonstrator's nominal envelope.",
+        "reason": "Current synthetic twin state is within the demonstrator's nominal envelope and current data-quality gate.",
     }
