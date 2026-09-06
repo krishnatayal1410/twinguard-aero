@@ -20,6 +20,15 @@ export interface RulInterval{
   calibrated_probability_interval?:boolean;
 }
 
+export interface RuntimeValidity{
+  telemetry_age_seconds:number|null;
+  stale:boolean;
+  freshness_limit_seconds?:number;
+  data_quality?:number;
+  minimum_data_quality?:number;
+  decision_eligible:boolean;
+}
+
 export interface TwinState{
   engine_id:string;
   timestamp:string;
@@ -29,6 +38,7 @@ export interface TwinState{
   trends?:Record<string,number>;
   sensor_trust:Record<string,number>;
   data_quality:Record<string,number|string>;
+  runtime_validity?:RuntimeValidity;
   health:{
     thermal:number;
     lubrication:number;
@@ -77,6 +87,8 @@ export interface TwinState{
     physics_model?:string;
     telemetry_source?:string;
     validation_scope?:string;
+    freshness_gate_seconds?:number;
+    mission_min_data_quality?:number;
   };
 }
 
@@ -137,7 +149,15 @@ export interface SystemStatus{
   database:string;
   models:{anomaly:boolean;fault:boolean;rul:boolean};
   integrations:{mqtt:boolean;unreal_udp:boolean;can:boolean};
-  telemetry:{available:boolean;age_seconds:number|null};
+  telemetry:{
+    available:boolean;
+    age_seconds:number|null;
+    stale?:boolean;
+    freshness_limit_seconds?:number;
+    data_quality?:number;
+    minimum_data_quality?:number;
+    decision_eligible?:boolean;
+  };
   security:{
     cors_origins:string[];
     trusted_hosts:string[];
