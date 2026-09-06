@@ -28,6 +28,7 @@ class TwinManager:
         self.state = None
         self.simulation = {"fault": "normal", "severity": 0.0}
         self.history = deque(maxlen=120)
+        self.event_history = deque(maxlen=120)
         self.anomaly_streak = 0
 
     @staticmethod
@@ -102,6 +103,43 @@ class TwinManager:
             return 0.0
         return (points[-1][1] - points[0][1]) / (points[-1][0] - points[0][0]) * 60.0
 
+    def _event(self, timestamp: str, event_type: str, severity: str, message: str):
+        self.event_history.append({"timestamp": timestamp, "type": event_type, "severity": severity, "message": message})
+
+    def _record_events(self, previous: dict | None, current: dict):
+        ts = str(current["timestamp"])
+        if previous is None:
+            self._event(ts, "TWIN_SYNCHRONIZED", "success", "Digital Twin synchronized with live telemetry.")
+            return
+
+        prev_ai = previous.get("ai", {})
+        cur_ai = current.get("ai", {})
+        if cur_ai.get("anomaly") and not prev_ai.get("anomaly"):
+            self._event(ts, "ANOMALY_DETECTED", "warning", "Persistent residual evidence crossed the anomaly threshold.")
+
+        prev_fault = str(prev_ai.get("probable_fault", "normal"))
+        cur_fault = str(cur_ai.get("probable_fault", "normal"))
+        if cur_fault != "normal" and cur_fault != prev_fault:
+            self._event(ts, "FAULT_IDENTIFIED", "warning", f"Probable fault changed to {cur_fault}.")
+
+        prev_priority = str(previous.get("maintenance", {}).get("priority", ""))
+        cur_priority = str(current.get("maintenance", {}).get("priority", ""))
+        if cur_priority and cur_priority != prev_priority:
+            severity = "critical" if cur_priority in {"NO_GO", "HIGH"} else "warning"
+            self._event(ts, "MAINTENANCE_CHANGE", severity, f"Maintenance priority changed to {cur_priority}.")
+
+        prev_health = float(previous.get("health", {}).get("overall", 100.0))
+        cur_health = float(current.get("health", {}).get("overall", 100.0))
+        if prev_health >= 86 > cur_health:
+            self._event(ts, "HEALTH_CAUTION", "warning", f"Overall health crossed the caution threshold at {cur_health:.1f}/100.")
+        if prev_health >= 70 > cur_health:
+            self._event(ts, "HEALTH_CRITICAL", "critical", f"Overall health crossed the high-risk threshold at {cur_health:.1f}/100.")
+
+        prev_quality = float(previous.get("data_quality", {}).get("overall", 100.0))
+        cur_quality = float(current.get("data_quality", {}).get("overall", 100.0))
+        if prev_quality >= settings.mission_min_data_quality > cur_quality:
+            self._event(ts, "DATA_QUALITY_HOLD", "critical", f"Data quality fell below the mission threshold at {cur_quality:.1f}/100.")
+
     def ingest(self, telemetry: dict):
         with self.lock:
             t = dict(telemetry)
@@ -138,7 +176,7 @@ class TwinManager:
 
             maintenance = self.maint.decide(health, ai, trust)
             ready = readiness(health, ai, maintenance, quality)
-            self.state = {
+            new_state = {
                 "engine_id": t.get("engine_id", settings.engine_id),
                 "timestamp": t["timestamp"],
                 "telemetry": t,
@@ -160,6 +198,9 @@ class TwinManager:
                     "mission_min_data_quality": settings.mission_min_data_quality,
                 },
             }
+            self._record_events(self.state, new_state)
+            new_state["events"] = list(self.event_history)
+            self.state = new_state
             self.previous = t
             self.history.append({"timestamp": t["timestamp"], "telemetry": t, "health": health, "ai": ai})
             self.replay.sample(self.state)
