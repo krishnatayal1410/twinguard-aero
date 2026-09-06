@@ -30,7 +30,64 @@ jobs:
           MODEL_DIR: ${{ github.workspace }}/models
           DATABASE_URL: sqlite:///${{ github.workspace }}/data/runtime/ci.db
           TWINGUARD_NATIVE_ML: '0'
-        run: pytest -q backend/tests
+        run: |
+          mkdir -p data/runtime
+          pytest -q backend/tests
+
+  integration:
+    needs: backend
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - name: Install backend dependencies
+        run: python -m pip install -r backend/requirements.txt
+      - name: Start TwinGuard backend and simulator
+        env:
+          PYTHONPATH: ${{ github.workspace }}/backend
+          MODEL_DIR: ${{ github.workspace }}/models
+          DATABASE_URL: sqlite:///${{ github.workspace }}/data/runtime/ci-integration.db
+          TWINGUARD_NATIVE_ML: '0'
+          TWINGUARD_API: http://127.0.0.1:8000
+        run: |
+          mkdir -p data/runtime
+          python -m uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8000 >/tmp/twinguard-backend.log 2>&1 &
+          echo $! >/tmp/twinguard-backend.pid
+          for i in $(seq 1 30); do
+            if python - <<'PY'
+          from urllib.request import urlopen
+          try:
+              print(urlopen('http://127.0.0.1:8000/health', timeout=1).read().decode())
+          except Exception:
+              raise SystemExit(1)
+          PY
+            then break; fi
+            sleep 1
+          done
+          python simulator/run.py --rate 4 >/tmp/twinguard-simulator.log 2>&1 &
+          echo $! >/tmp/twinguard-simulator.pid
+          sleep 3
+      - name: Run live end-to-end verifier
+        env:
+          TWINGUARD_API: http://127.0.0.1:8000
+        run: python scripts/verify_system.py
+      - name: Show integration logs on failure
+        if: failure()
+        run: |
+          echo '--- backend ---'
+          cat /tmp/twinguard-backend.log || true
+          echo '--- simulator ---'
+          cat /tmp/twinguard-simulator.log || true
+      - name: Stop integration processes
+        if: always()
+        run: |
+          test -f /tmp/twinguard-simulator.pid && kill $(cat /tmp/twinguard-simulator.pid) || true
+          test -f /tmp/twinguard-backend.pid && kill $(cat /tmp/twinguard-backend.pid) || true
 
   frontend:
     runs-on: ubuntu-latest
