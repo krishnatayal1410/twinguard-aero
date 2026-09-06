@@ -22,12 +22,13 @@ interface Store{
 type HistoryKey="rpm"|"cht"|"egt"|"oil_pressure"|"oil_temperature"|"vibration"|"altitude"|"battery_voltage";
 const keys:HistoryKey[]=["rpm","cht","egt","oil_pressure","oil_temperature","vibration","altitude","battery_voltage"];
 const readTelemetry=(x:TelemetryState,key:HistoryKey)=>Number(x[key]);
+const emptyHistory=():Record<HistoryKey,number[]>=>({rpm:[],cht:[],egt:[],oil_pressure:[],oil_temperature:[],vibration:[],altitude:[],battery_voltage:[]});
 
 export const useTwinStore=create<Store>(set=>({
  online:false,
  view:"command",
  focus:"all",
- history:Object.fromEntries(keys.map(k=>[k,[]])) as Record<HistoryKey,number[]>,
+ history:emptyHistory(),
  missionRuns:[],
  missions:[],
  setTwin:x=>set(s=>{
