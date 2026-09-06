@@ -1,5 +1,5 @@
 import{create}from"zustand";
-import type{MissionResult,ReplayMission,RuntimeValidity,TwinState,ViewName}from"../types/twin";
+import type{MissionResult,ReplayMission,RuntimeValidity,TelemetryState,TwinState,ViewName}from"../types/twin";
 
 interface Store{
  twin?:TwinState;
@@ -7,7 +7,7 @@ interface Store{
  runtimeValidity?:RuntimeValidity;
  view:ViewName;
  focus:string;
- history:Record<string,number[]>;
+ history:Record<HistoryKey,number[]>;
  missionRuns:Array<{fault:string;result:MissionResult}>;
  missions:ReplayMission[];
  setTwin:(x:TwinState)=>void;
@@ -19,18 +19,20 @@ interface Store{
  setMissions:(m:ReplayMission[])=>void;
 }
 
-const keys=["rpm","cht","egt","oil_pressure","oil_temperature","vibration","altitude","battery_voltage"];
+type HistoryKey="rpm"|"cht"|"egt"|"oil_pressure"|"oil_temperature"|"vibration"|"altitude"|"battery_voltage";
+const keys:HistoryKey[]=["rpm","cht","egt","oil_pressure","oil_temperature","vibration","altitude","battery_voltage"];
+const readTelemetry=(x:TelemetryState,key:HistoryKey)=>Number(x[key]);
 
 export const useTwinStore=create<Store>(set=>({
  online:false,
  view:"command",
  focus:"all",
- history:Object.fromEntries(keys.map(k=>[k,[]])),
+ history:Object.fromEntries(keys.map(k=>[k,[]])) as Record<HistoryKey,number[]>,
  missionRuns:[],
  missions:[],
  setTwin:x=>set(s=>{
   const h={...s.history};
-  for(const k of keys)h[k]=[...(h[k]??[]),Number(x.telemetry[k]??0)].slice(-90);
+  for(const k of keys)h[k]=[...(h[k]??[]),readTelemetry(x.telemetry,k)].slice(-90);
   return{twin:x,history:h,runtimeValidity:x.runtime_validity??s.runtimeValidity};
  }),
  setOnline:online=>set({online}),
