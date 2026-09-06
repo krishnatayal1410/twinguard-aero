@@ -2,15 +2,15 @@ services:
   timescaledb:
     image: timescale/timescaledb:latest-pg16
     environment:
-      POSTGRES_DB: twinguard
-      POSTGRES_USER: twinguard
-      POSTGRES_PASSWORD: twinguard_dev
+      POSTGRES_DB: ${POSTGRES_DB:-twinguard}
+      POSTGRES_USER: ${POSTGRES_USER:-twinguard}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-twinguard_dev_local_only}
     ports: ["127.0.0.1:5432:5432"]
     volumes:
       - timescale_data:/var/lib/postgresql/data
       - ./database/init.sql:/docker-entrypoint-initdb.d/001-init.sql:ro
     healthcheck:
-      test: ["CMD-SHELL","pg_isready -U twinguard -d twinguard"]
+      test: ["CMD-SHELL","pg_isready -U ${POSTGRES_USER:-twinguard} -d ${POSTGRES_DB:-twinguard}"]
       interval: 5s
       timeout: 3s
       retries: 20
@@ -27,11 +27,15 @@ services:
       context: .
       dockerfile: backend/Dockerfile
     environment:
-      DATABASE_URL: postgresql+psycopg://twinguard:twinguard_dev@timescaledb:5432/twinguard
+      TWINGUARD_ENV: development
+      ALLOW_SIGNUP: "1"
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-twinguard}:${POSTGRES_PASSWORD:-twinguard_dev_local_only}@timescaledb:5432/${POSTGRES_DB:-twinguard}
       MODEL_DIR: /app/models
       TWINGUARD_INGEST_KEY: ${TWINGUARD_INGEST_KEY:-local-docker-demo-change-me}
       CORS_ORIGINS: http://localhost:5173,http://127.0.0.1:5173
       TRUSTED_HOSTS: localhost,127.0.0.1,backend
+      TELEMETRY_STALE_SECONDS: ${TELEMETRY_STALE_SECONDS:-8}
+      MISSION_MIN_DATA_QUALITY: ${MISSION_MIN_DATA_QUALITY:-70}
       MQTT_ENABLED: "1"
       MQTT_HOST: mosquitto
       MQTT_PORT: "1883"
@@ -40,6 +44,12 @@ services:
     depends_on:
       timescaledb: {condition: service_healthy}
       mosquitto: {condition: service_started}
+    healthcheck:
+      test: ["CMD-SHELL","python -c \"from urllib.request import urlopen; assert urlopen('http://127.0.0.1:8000/health', timeout=2).status == 200\""]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
 
   simulator:
     build:
@@ -52,8 +62,9 @@ services:
       TWINGUARD_API: http://backend:8000
       TWINGUARD_INGEST_KEY: ${TWINGUARD_INGEST_KEY:-local-docker-demo-change-me}
     depends_on:
-      backend: {condition: service_started}
+      backend: {condition: service_healthy}
       mosquitto: {condition: service_started}
+    restart: unless-stopped
 
   frontend:
     build:
@@ -61,7 +72,8 @@ services:
       dockerfile: frontend/Dockerfile
     ports: ["127.0.0.1:5173:80"]
     depends_on:
-      backend: {condition: service_started}
+      backend: {condition: service_healthy}
+    restart: unless-stopped
 
 volumes:
   timescale_data:

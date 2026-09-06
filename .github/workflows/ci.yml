@@ -1,0 +1,164 @@
+name: TwinGuard CI
+
+on:
+  push:
+    branches: [main, sih26054-overhaul]
+    paths-ignore:
+      - 'docs/**'
+      - '*.md'
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - '*.md'
+
+concurrency:
+  group: twinguard-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - name: Validate Docker Compose configuration
+        run: docker compose config -q
+      - name: Install backend dependencies
+        run: python -m pip install -r backend/requirements.txt
+      - name: Compile Python
+        run: python -m compileall -q backend simulator ai scripts
+      - name: Enforce SIH26054 domain consistency
+        run: python scripts/domain_consistency_check.py
+      - name: Verify production signup defaults closed
+        env:
+          PYTHONPATH: ${{ github.workspace }}/backend
+          TWINGUARD_ENV: production
+        run: |
+          unset ALLOW_SIGNUP
+          python - <<'PY'
+          from app.core import settings
+          assert settings.environment == 'production'
+          assert settings.allow_signup is False
+          print('Production signup default: disabled')
+          PY
+      - name: Run backend tests
+        env:
+          PYTHONPATH: ${{ github.workspace }}/backend
+          MODEL_DIR: ${{ github.workspace }}/models
+          DATABASE_URL: sqlite:///${{ github.workspace }}/data/runtime/ci.db
+          TWINGUARD_NATIVE_ML: '0'
+          TWINGUARD_ENV: development
+          ALLOW_SIGNUP: '1'
+        run: |
+          mkdir -p data/runtime
+          pytest -q backend/tests
+      - name: Verify packaged native ML artifacts
+        env:
+          PYTHONPATH: ${{ github.workspace }}/backend
+          MODEL_DIR: ${{ github.workspace }}/models
+          TWINGUARD_NATIVE_ML: '1'
+        run: |
+          python - <<'PY'
+          from app.services.ai_engine import AIEngine
+          from app.services.physics import PhysicsEngine
+
+          telemetry = {
+              'rpm': 4100, 'throttle': 70, 'cht': 181, 'egt': 702,
+              'oil_pressure': 4.47, 'oil_temperature': 108, 'fuel_flow': 20.6,
+              'vibration': .23, 'battery_voltage': 27.85, 'alternator_voltage': 28.15,
+              'injection_timing': 18.8, 'altitude': 4300, 'ambient_temperature': 25,
+              'operating_hours': 42,
+          }
+          physics = PhysicsEngine()
+          expected = physics.expected(telemetry)
+          residuals = physics.residuals(telemetry, expected)
+          ai = AIEngine('models')
+          result = ai.predict(telemetry, residuals, {})
+          assert ai.fault is not None, 'fault classifier did not load'
+          assert ai.rul is not None, 'RUL regressor did not load'
+          assert result['model_state'] == 'NATIVE_ML'
+          assert result['rul_interval_hours']['lower'] <= result['rul_hours'] <= result['rul_interval_hours']['upper']
+          print('Native synthetic ML pack verified:', result['probable_fault'], result['rul_hours'])
+          PY
+
+  integration:
+    needs: backend
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - name: Install backend dependencies
+        run: python -m pip install -r backend/requirements.txt
+      - name: Start TwinGuard backend and simulator
+        env:
+          PYTHONPATH: ${{ github.workspace }}/backend
+          MODEL_DIR: ${{ github.workspace }}/models
+          DATABASE_URL: sqlite:///${{ github.workspace }}/data/runtime/ci-integration.db
+          TWINGUARD_NATIVE_ML: '0'
+          TWINGUARD_API: http://127.0.0.1:8000
+          TWINGUARD_ENV: development
+          ALLOW_SIGNUP: '1'
+        run: |
+          mkdir -p data/runtime
+          python -m uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8000 >/tmp/twinguard-backend.log 2>&1 &
+          echo $! >/tmp/twinguard-backend.pid
+          for i in $(seq 1 30); do
+            if python - <<'PY'
+          from urllib.request import urlopen
+          try:
+              print(urlopen('http://127.0.0.1:8000/health', timeout=1).read().decode())
+          except Exception:
+              raise SystemExit(1)
+          PY
+            then break; fi
+            sleep 1
+          done
+          python simulator/run.py --rate 4 >/tmp/twinguard-simulator.log 2>&1 &
+          echo $! >/tmp/twinguard-simulator.pid
+          sleep 3
+      - name: Run live end-to-end verifier
+        env:
+          TWINGUARD_API: http://127.0.0.1:8000
+        run: python scripts/verify_system.py
+      - name: Show integration logs on failure
+        if: failure()
+        run: |
+          echo '--- backend ---'
+          cat /tmp/twinguard-backend.log || true
+          echo '--- simulator ---'
+          cat /tmp/twinguard-simulator.log || true
+      - name: Stop integration processes
+        if: always()
+        run: |
+          test -f /tmp/twinguard-simulator.pid && kill $(cat /tmp/twinguard-simulator.pid) || true
+          test -f /tmp/twinguard-backend.pid && kill $(cat /tmp/twinguard-backend.pid) || true
+
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install frontend dependencies
+        run: npm install --no-audit --no-fund
+      - name: Typecheck and production build
+        run: npm run build

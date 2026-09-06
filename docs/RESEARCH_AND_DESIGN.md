@@ -1,69 +1,136 @@
-# Research and Design Basis
+# TwinGuard Aero — Research and Design Basis
 
-This build was redesigned after reviewing current aircraft/industrial Digital Twin work and modern 3D visualization patterns.
+TwinGuard is designed around a strict separation between **visualization**, **state estimation**, **health intelligence** and **mission decision support**.
 
-## Findings applied to TwinGuard
+## 1. A 3D model is not the Digital Twin
 
-### Digital Twin is more than the 3D scene
-Aircraft-engine Digital Twin literature describes a system that links the physical engine, a digital model, physical/digital data, virtual-real interaction and a 3D scene. The 3D view is a service that displays state and predictions; it is not the entire twin.
+The 3D engine helps an operator understand where a condition is occurring, but the Digital Twin is the synchronized computational state behind it:
 
-Source:
-https://link.springer.com/article/10.1007/s40747-025-02027-z
+- observed telemetry,
+- operating context,
+- expected healthy behavior,
+- residuals,
+- temporal trends,
+- Sensor Trust,
+- subsystem health,
+- diagnostic hypotheses,
+- RUL/degradation state,
+- mission-risk state,
+- replay/evidence history.
 
-### Combine structural, performance and system views
-Aircraft-engine maintenance literature separates structural twin, performance twin and system twin concerns. TwinGuard therefore keeps the 3D structural view connected to physics/AI performance estimates and mission/maintenance system decisions.
+This is why TwinGuard can continue operating even if the WebGL view is unavailable.
 
-Source:
-https://link.springer.com/chapter/10.1007/978-981-95-0942-3_8
+## 2. Hybrid rather than black-box-first
 
-### Physics + data-driven models
-Recent aero-engine research combines physical knowledge with spatiotemporal/data-driven modeling. TwinGuard's MVP uses a simpler explainable version of that principle: an expected physics surrogate plus residual features plus ML.
+The proof-of-concept follows this reasoning chain:
 
-Sources:
-https://www.sciencedirect.com/science/article/pii/S1474034625009322
-https://www.sciencedirect.com/science/article/pii/S0952197626000199
+```text
+Operating condition
+→ expected healthy state
+→ observed - expected residuals
+→ temporal/multi-signal evidence
+→ anomaly / fault hypothesis
+→ health / degradation
+→ mission impact
+```
 
-### Predictive-maintenance twin architecture should be modular
-Reference-architecture work emphasizes integration and multiple architectural views for Digital Twin predictive maintenance systems. TwinGuard separates telemetry, twin synchronization, physics, AI, trust, health, mission, replay and visualization services.
+A learned model can be inserted into the diagnostic/prognostic stages, but it does not replace the expected-state model, provenance or evidence chain.
 
-Source:
-https://www.sciencedirect.com/science/article/pii/S0360835223001237
+## 3. Why residuals matter
 
-### 3D should explain the engineering context
-An aircraft-engine predictive-maintenance visualization case study notes that raw graphs can be difficult for non-engineers to interpret; the 3D representation helps connect abnormal readings to physical components. This directly informed TwinGuard's subsystem isolation and callout design.
+A fixed threshold asks whether a value crossed a universal limit.
 
-Source:
-https://www.creativedatastudio.com/projects/aircraft-digital-twin
+TwinGuard instead also asks whether the measurement is abnormal **for the current operating state**. The same CHT, EGT or oil-pressure value can carry different meaning at different RPM, load, altitude and ambient conditions.
 
-### Use glTF/GLB for web runtime assets
-Three.js recommends glTF where possible because it is designed for runtime delivery and supports materials, animation and scene data. TwinGuard therefore ships the engine as GLB.
+The current baseline is a generic low-order aero-piston surrogate. Real deployment requires target-engine performance maps or calibrated physics.
 
-Source:
-https://threejs.org/manual/en/loading-3d-models.html
+## 4. Why time matters
 
-### Bloom/postprocessing should be restrained
-Three.js provides an Unreal Bloom postprocessing workflow. TwinGuard uses a low-intensity bloom and vignette around emissive health states rather than making the whole interface glow.
+Single-sample rules are fragile. TwinGuard therefore tracks rates and persistence such as:
 
-Source:
-https://threejs.org/examples/webgl_postprocessing_unreal_bloom.html
+- pressure decline,
+- temperature rise,
+- vibration growth,
+- electrical decay,
+- health-index decline,
+- consecutive anomaly persistence.
 
-### Game-engine integration is a valid Digital Twin pathway
-Recent work demonstrates Digital Twin predictive-maintenance architecture combining game engines, MQTT and ML. TwinGuard exposes MQTT plus a UDP/WebSocket state contract so an Unreal scene can consume the same state used by the web dashboard.
+This allows the system to distinguish a transient/noisy sample from a developing degradation pattern.
 
-Source:
-https://www.sciencedirect.com/science/article/pii/S0360835226001154
+## 5. Sensor Trust is separate from engine health
 
-## Visual direction
+A sensor that disagrees with a healthy model is not automatically faulty: the engine itself may be degraded.
 
-The new dashboard intentionally avoids:
-- generic admin sidebar layouts,
-- a collection of unrelated cards,
-- treating a spinning 3D object as the Digital Twin,
-- excessive neon decoration.
+TwinGuard therefore considers **corroboration**. A low oil-pressure residual combined with increasing oil temperature and vibration supports a physical lubrication condition. A large isolated oil-pressure deviation without correlated evidence is more suspicious as a sensor/data problem.
 
-The main visual hierarchy is:
-1. engine,
-2. state/health,
-3. operational decision,
-4. engineering evidence,
-5. history/mission context.
+## 6. Mission-aware prognosis
+
+RUL by itself is not a mission decision. An engine with an estimated 5 h of remaining useful operation has very different implications for a 30 min return leg versus a 6 h high-load continuation.
+
+The Mission Reliability Twin therefore uses:
+
+- current subsystem health,
+- active diagnostic condition,
+- degradation rate,
+- anomaly persistence,
+- simulation-derived RUL margin,
+- planned duration,
+- altitude,
+- ambient temperature,
+- average throttle/load.
+
+It reports an engineering **Mission Feasibility Index** rather than pretending to know a calibrated real-world probability of mission success.
+
+## 7. Counterfactual planning
+
+A useful twin should not only say that risk is high. It should let the operator/engineer test a modified mission profile.
+
+TwinGuard independently rescores a lower-stress alternative using reduced duration/load/altitude rather than displaying a hard-coded recommendation.
+
+## 8. Explainability
+
+Every major decision should be traceable to evidence:
+
+```text
+Telemetry
+→ expected state
+→ residual
+→ trend/persistence
+→ corroborating sensors
+→ subsystem health
+→ fault hypothesis
+→ mission-risk contributors
+```
+
+This is more defensible than displaying only an AI label or a confidence percentage.
+
+## 9. Web 3D strategy
+
+The current HMI uses a **procedural Three.js / React Three Fiber aero-piston representation** instead of the previous turboshaft-style GLB semantics. It represents cylinder banks, crankcase, lubrication, induction/fuel, exhaust/thermal and electrical modules.
+
+The purpose is subsystem localization and state visualization—not geometric certification or OEM CAD fidelity.
+
+## 10. Real telemetry integration principle
+
+TwinGuard treats the simulator as one telemetry adapter. Moving to hardware should replace the source adapter, not the downstream Digital Twin contract:
+
+```text
+Simulator / MQTT / CAN / ECU replay
+              ↓
+        Canonical schema
+              ↓
+       Same Twin pipeline
+```
+
+This prevents the prototype from being architecturally tied to synthetic data.
+
+## 11. Research claims policy
+
+The project deliberately distinguishes:
+
+- **working software architecture**,
+- **synthetic scenario behavior**,
+- **generic engineering assumptions**,
+- **future engine-specific validation**.
+
+Synthetic metrics, health percentages, RUL and mission indices must not be represented as validated MALE-UAV engine performance until authorized real-engine evidence exists.

@@ -1,50 +1,97 @@
 import{Canvas,useFrame,useThree}from"@react-three/fiber";
-import{Html,OrbitControls,useGLTF,useTexture}from"@react-three/drei";
-import{Suspense,useEffect,useMemo,useRef}from"react";
+import{OrbitControls,useTexture}from"@react-three/drei";
+import{useEffect,useMemo,useRef}from"react";
 import*as THREE from"three";
-import type{Group,Mesh}from"three";
+import type{Group}from"three";
 import{useTwinStore}from"../store/twinStore";
-import{fmt,pct,tone}from"./ui";
 import{supportsWebGL}from"../utils/webgl";
 
 type Props={compact?:boolean;explode?:boolean;xray?:boolean;focus?:string;autoRotate?:boolean;zoom?:number;resetToken?:number;onFocus?:(s:string)=>void};
-type Part={mesh:Mesh;base:THREE.Vector3;target:THREE.Vector3;module:string;name:string;spin:number;phase:number};
+type ModuleName="crankcase"|"cylinders"|"lubrication"|"induction"|"exhaust"|"electrical";
 
-const moduleOf=(name:string)=>{const n=name.toUpperCase();if(n.startsWith("FAN_"))return"fan";if(n.startsWith("COMPRESSOR_"))return"compressor";if(n.startsWith("COMBUSTOR_"))return"combustor";if(n.startsWith("TURBINE_"))return"turbine";if(n.startsWith("EXHAUST_"))return"exhaust";if(n.startsWith("ACCESSORY_"))return"accessory";if(n.startsWith("SENSOR_"))return"sensor";return"core"};
-const offsets:Record<string,THREE.Vector3>={fan:new THREE.Vector3(-.78,0,0),compressor:new THREE.Vector3(-.34,0,0),combustor:new THREE.Vector3(.05,0,0),turbine:new THREE.Vector3(.48,0,0),exhaust:new THREE.Vector3(.92,0,0),accessory:new THREE.Vector3(-.08,.12,.16),sensor:new THREE.Vector3(0,.14,.15),core:new THREE.Vector3(0,0,0)};
-const colors:Record<string,string>={fan:"#d7e0e5",compressor:"#b8c8d2",combustor:"#71808b",turbine:"#aebdc7",exhaust:"#c8d2d8",accessory:"#7a93a5",sensor:"#2ea7df",core:"#9aaab5"};
+const EXPLODE:Record<ModuleName,[number,number,number]>={
+ crankcase:[0,0,0],cylinders:[.55,0,0],lubrication:[0,-.45,0],induction:[0,.42,0],exhaust:[0,0,.48],electrical:[-.35,.18,-.32]
+};
 
-function moduleHealth(module:string,t:any){if(!t)return 96;if(module==="fan"||module==="compressor")return Number(t.health?.mechanical??96);if(module==="combustor"||module==="exhaust")return Number(t.health?.thermal??96);if(module==="turbine"){const h=Math.min(Number(t.health?.thermal??96),Number(t.health?.mechanical??96));return t.ai?.probable_fault==="turbine_blade_degradation"?Math.min(h,66):h}if(module==="accessory")return Number(t.health?.electrical??96);return Number(t.health?.overall??96)}
-function partColor(module:string,h:number,name:string){if(name.includes("GLOW")||name==="SHAFT_CORE")return"#168fe5";if(name.includes("COMBUSTOR_CAN"))return"#b38452";if(name.includes("STATOR")||name.includes("SHAFT")||name.includes("INNER"))return"#5d6a73";if(h<70)return"#d66b70";if(h<86)return"#c6a25e";return colors[module]??"#a9b5bd"}
-
-function EngineModel({explode=false,xray=false,focus="all",onFocus}:Props){
- const{scene}=useGLTF("/assets/engine/engine.glb"),matcap=useTexture("/assets/materials/aerospace-matcap.png"),darkMatcap=useTexture("/assets/materials/aerospace-dark-matcap.png"),twin=useTwinStore(s=>s.twin),root=useMemo(()=>scene.clone(true),[scene]),group=useRef<Group>(null),parts=useRef<Part[]>([]);
- useEffect(()=>{matcap.colorSpace=THREE.SRGBColorSpace;darkMatcap.colorSpace=THREE.SRGBColorSpace},[matcap,darkMatcap]);
- useEffect(()=>{parts.current=[];let i=0;root.traverse(o=>{if(!(o as Mesh).isMesh)return;const mesh=o as Mesh,name=mesh.name||`PART_${i}`,module=moduleOf(name),isGlow=name.includes("GLOW")||name==="SHAFT_CORE",isDark=name.includes("STATOR")||name.includes("SHAFT")||name.includes("INNER")||name.includes("HUB");
-   mesh.geometry.computeVertexNormals();
-   mesh.material=isGlow?new THREE.MeshBasicMaterial({color:"#1599ec",side:THREE.DoubleSide,toneMapped:false}):new THREE.MeshMatcapMaterial({color:"#becbd3",matcap:isDark?darkMatcap:matcap,side:THREE.DoubleSide,transparent:false,opacity:1});
-   mesh.renderOrder=isGlow?3:1;mesh.frustumCulled=false;
-   const base=mesh.position.clone(),target=base.clone().add(offsets[module]??offsets.core),spin=/FAN_BLADE|COMPRESSOR_ROTOR|COMPRESSOR_DISK|TURBINE_BLADE|TURBINE_DISK/.test(name)?1:0;parts.current.push({mesh,base,target,module,name,spin,phase:(i++%8)*Math.PI/4})})},[root,matcap,darkMatcap]);
- useEffect(()=>{for(const p of parts.current){const h=moduleHealth(p.module,twin),selected=focus==="all"||focus===p.module,isGlow=p.name.includes("GLOW")||p.name==="SHAFT_CORE",c=partColor(p.module,h,p.name),mat=p.mesh.material as THREE.Material;
-   if(isGlow){const m=mat as THREE.MeshBasicMaterial;m.color.set(c);m.transparent=xray||!selected;m.opacity=xray?(selected?0.88:0.14):(selected?1:.16);m.depthWrite=!xray&&selected}
-   else{const m=mat as THREE.MeshMatcapMaterial;m.color.set(c);m.transparent=xray||!selected;m.opacity=xray?(selected?0.78:0.09):(selected?1:.14);m.depthWrite=!xray&&selected;m.alphaTest=0;m.needsUpdate=true}
- }},[focus,xray,twin]);
- useFrame((_,dt)=>{const k=1-Math.exp(-dt*6),speed=Math.min(16,Math.max(3.5,Number(twin?.telemetry?.rpm??4200)/340));for(const p of parts.current){const target=explode?p.target:p.base;p.mesh.position.x=THREE.MathUtils.lerp(p.mesh.position.x,target.x,k);if(p.spin){p.phase+=dt*speed*(p.module==="turbine"?0.72:1);const co=Math.cos(p.phase),si=Math.sin(p.phase),y=p.base.y,z=p.base.z;p.mesh.position.y=y*co-z*si;p.mesh.position.z=y*si+z*co;p.mesh.rotation.x=p.phase}else{p.mesh.position.y=THREE.MathUtils.lerp(p.mesh.position.y,target.y,k);p.mesh.position.z=THREE.MathUtils.lerp(p.mesh.position.z,target.z,k)}}});
- return <group ref={group} rotation={[.045,-.22,.012]} scale={1.07} onDoubleClick={e=>{e.stopPropagation();onFocus?.(moduleOf(e.object.name))}}><primitive object={root}/></group>
+function healthFor(module:ModuleName,t:any){
+ if(!t)return 96;
+ if(module==="cylinders")return Math.min(Number(t.health?.thermal??96),Number(t.health?.combustion??96));
+ if(module==="lubrication")return Number(t.health?.lubrication??96);
+ if(module==="induction")return Number(t.health?.combustion??96);
+ if(module==="exhaust")return Number(t.health?.thermal??96);
+ if(module==="electrical")return Number(t.health?.electrical??96);
+ return Number(t.health?.mechanical??96);
 }
-function TechFloor(){return <group position={[0,-1.76,0]} rotation={[-Math.PI/2,0,0]}>{[1.5,2.3,3.1,3.9,4.7].map(r=><mesh key={r}><ringGeometry args={[r-.009,r+.009,112]}/><meshBasicMaterial color="#69bee9" transparent opacity={.20} toneMapped={false}/></mesh>)}{Array.from({length:16},(_,i)=>{const a=i*Math.PI/8;return <mesh key={i} rotation={[0,0,a]} position={[2.45,0,0]}><planeGeometry args={[4.9,.010]}/><meshBasicMaterial color="#9bd4ed" transparent opacity={.11} toneMapped={false}/></mesh>})}</group>}
-function CoreGlow(){return <><pointLight position={[-1.4,.2,1.3]} intensity={1.6} color="#40b9ff"/><pointLight position={[1.2,.15,1]} intensity={1.2} color="#46c9ff"/></>}
-function SceneSetup(){const{gl}=useThree();useEffect(()=>{gl.outputColorSpace=THREE.SRGBColorSpace;gl.toneMapping=THREE.NoToneMapping;gl.setClearColor("#f9fcff",1)},[gl]);return <><color attach="background" args={["#f9fcff"]}/><TechFloor/><CoreGlow/></>}
-const positions:Record<string,[number,number,number]>={fan:[-3.0,1.78,.30],compressor:[-1.5,2.08,.24],combustor:[-.06,2.18,.18],turbine:[1.22,1.84,.18],exhaust:[3.04,-1.02,.20]};
-function Callouts({focus}:{focus:string}){const t=useTwinStore(s=>s.twin);if(!t)return null;const data:any={fan:["FAN MODULE",moduleHealth("fan",t),"Temp 52°C"],compressor:["COMPRESSOR",moduleHealth("compressor",t),"Temp 78°C"],combustor:["COMBUSTOR",moduleHealth("combustor",t),`Temp ${fmt(t.telemetry.egt,0)}°C`],turbine:["TURBINE",moduleHealth("turbine",t),`Temp ${fmt(Number(t.telemetry.egt??1000)*.66,0)}°C`],exhaust:["EXHAUST NOZZLE",moduleHealth("exhaust",t),`Pressure ${fmt(t.telemetry.oil_pressure,2)} bar`]};return <>{Object.keys(data).filter(m=>focus==="all"||focus===m).map(m=><Html key={m} position={positions[m]} center distanceFactor={8.8} style={{pointerEvents:"none"}}><div className={`three-callout ${tone(data[m][1])}`}><span>{data[m][0]}</span><strong>{pct(data[m][1])}</strong><small>{data[m][2]}</small></div></Html>)}</>}
-function CameraRig({zoom=1,resetToken=0}:{zoom?:number;resetToken?:number}){const{camera}=useThree();useEffect(()=>{camera.position.copy(new THREE.Vector3(8.4,3.2,9.2).multiplyScalar(zoom));camera.lookAt(0,.02,0);camera.updateProjectionMatrix()},[camera,zoom,resetToken]);return null}
+function healthColor(h:number){return h<67?"#d35b65":h<86?"#c99545":"#a9bac5"}
+
+function Mat({module,xray,selected}:{module:ModuleName;xray:boolean;selected:boolean}){
+ const twin=useTwinStore(s=>s.twin),matcap=useTexture("/assets/materials/aerospace-matcap.png");
+ useEffect(()=>{matcap.colorSpace=THREE.SRGBColorSpace},[matcap]);
+ const h=healthFor(module,twin),opacity=xray?(selected?.66:.10):(selected?1:.16);
+ return <meshMatcapMaterial matcap={matcap} color={healthColor(h)} side={THREE.DoubleSide} transparent={opacity<1} opacity={opacity} depthWrite={opacity>.7}/>;
+}
+
+function Module({name,explode,xray,focus,onFocus,children}:{name:ModuleName;explode:boolean;xray:boolean;focus:string;onFocus?:(s:string)=>void;children:React.ReactNode}){
+ const group=useRef<Group>(null),target=EXPLODE[name],selected=focus==="all"||focus===name;
+ useFrame((_,dt)=>{if(!group.current)return;const k=1-Math.exp(-dt*6),m=explode?1:0;group.current.position.x=THREE.MathUtils.lerp(group.current.position.x,target[0]*m,k);group.current.position.y=THREE.MathUtils.lerp(group.current.position.y,target[1]*m,k);group.current.position.z=THREE.MathUtils.lerp(group.current.position.z,target[2]*m,k)});
+ return <group ref={group} onDoubleClick={e=>{e.stopPropagation();onFocus?.(name)}}>{children}{/* invisible hit target keeps module selectable */}<mesh visible={false}><boxGeometry args={[.01,.01,.01]}/><meshBasicMaterial/></mesh></group>;
+}
+
+function AeroPistonEngine({explode=false,xray=false,focus="all",onFocus}:Props){
+ const twin=useTwinStore(s=>s.twin),rpm=Number(twin?.telemetry?.rpm??3900),shaft=useRef<Group>(null);
+ useFrame((_,dt)=>{if(shaft.current)shaft.current.rotation.x+=dt*Math.min(18,Math.max(2,rpm/300))});
+ const selected=(m:ModuleName)=>focus==="all"||focus===m;
+ const heads=useMemo(()=>[-.62,.62],[]);
+ return <group rotation={[.12,-.34,.02]} scale={1.08}>
+  <Module name="crankcase" explode={explode} xray={xray} focus={focus} onFocus={onFocus}>
+   <mesh scale={[1.55,.86,1.25]}><boxGeometry args={[1,1,1]}/><Mat module="crankcase" xray={xray} selected={selected("crankcase")}/></mesh>
+   <group ref={shaft} rotation={[0,0,Math.PI/2]}><mesh><cylinderGeometry args={[.16,.16,2.1,32]}/><meshBasicMaterial color="#5b6b76" transparent opacity={xray?.45:1}/></mesh></group>
+   <mesh position={[0,0,1.02]} rotation={[Math.PI/2,0,0]}><cylinderGeometry args={[.48,.38,.48,32]}/><Mat module="crankcase" xray={xray} selected={selected("crankcase")}/></mesh>
+  </Module>
+
+  <Module name="cylinders" explode={explode} xray={xray} focus={focus} onFocus={onFocus}>
+   {heads.flatMap(z=>[-1,1].map((side,i)=>{const x=side*1.62;return <group key={`${z}-${side}`} position={[x,0,z]}>
+    <mesh rotation={[0,0,Math.PI/2]}><cylinderGeometry args={[.48,.55,1.35,32,1,true]}/><Mat module="cylinders" xray={xray} selected={selected("cylinders")}/></mesh>
+    <mesh position={[side*.72,0,0]} scale={[.42,.78,.78]}><boxGeometry/><Mat module="cylinders" xray={xray} selected={selected("cylinders")}/></mesh>
+    {[-.25,0,.25].map(y=><mesh key={y} position={[side*.82,y,0]} rotation={[0,0,Math.PI/2]}><torusGeometry args={[.46,.035,10,40]}/><meshBasicMaterial color="#627785" transparent opacity={xray?.45:1}/></mesh>)}
+   </group>}))}
+  </Module>
+
+  <Module name="induction" explode={explode} xray={xray} focus={focus} onFocus={onFocus}>
+   <mesh position={[0,1.05,0]} scale={[1.55,.30,.45]}><boxGeometry/><Mat module="induction" xray={xray} selected={selected("induction")}/></mesh>
+   {[-.72,.72].map(x=><mesh key={x} position={[x,.75,0]}><cylinderGeometry args={[.10,.10,.75,18]}/><meshBasicMaterial color="#5d8aa2" transparent opacity={xray?.45:1}/></mesh>)}
+   <mesh position={[0,1.07,.52]} rotation={[Math.PI/2,0,0]}><cylinderGeometry args={[.25,.25,.45,24]}/><Mat module="induction" xray={xray} selected={selected("induction")}/></mesh>
+  </Module>
+
+  <Module name="lubrication" explode={explode} xray={xray} focus={focus} onFocus={onFocus}>
+   <mesh position={[0,-.92,0]} scale={[1.05,.42,.82]}><boxGeometry/><Mat module="lubrication" xray={xray} selected={selected("lubrication")}/></mesh>
+   <mesh position={[1.05,-.83,-.72]} rotation={[Math.PI/2,0,0]}><cylinderGeometry args={[.32,.32,.64,24]}/><Mat module="lubrication" xray={xray} selected={selected("lubrication")}/></mesh>
+   <mesh position={[.62,-.72,-.55]} rotation={[0,0,.35]}><cylinderGeometry args={[.055,.055,1.35,12]}/><meshBasicMaterial color="#1d9bcb" transparent opacity={xray?.35:.85}/></mesh>
+  </Module>
+
+  <Module name="exhaust" explode={explode} xray={xray} focus={focus} onFocus={onFocus}>
+   {[-.62,.62].flatMap(z=>[-1,1].map(side=><group key={`${z}-${side}`} position={[side*1.9,-.45,z]}>
+    <mesh rotation={[0,0,Math.PI/2]}><cylinderGeometry args={[.10,.12,1.15,16]}/><Mat module="exhaust" xray={xray} selected={selected("exhaust")}/></mesh>
+   </group>))}
+   <mesh position={[0,-.48,-1.16]} rotation={[Math.PI/2,0,0]}><torusGeometry args={[.54,.13,16,48,Math.PI*1.65]}/><Mat module="exhaust" xray={xray} selected={selected("exhaust")}/></mesh>
+  </Module>
+
+  <Module name="electrical" explode={explode} xray={xray} focus={focus} onFocus={onFocus}>
+   <mesh position={[-.72,.56,-.88]} rotation={[Math.PI/2,0,0]}><cylinderGeometry args={[.31,.31,.62,24]}/><Mat module="electrical" xray={xray} selected={selected("electrical")}/></mesh>
+   <mesh position={[-.72,.56,-1.23]} rotation={[Math.PI/2,0,0]}><cylinderGeometry args={[.10,.10,.18,18]}/><meshBasicMaterial color="#3a708b" transparent opacity={xray?.4:1}/></mesh>
+  </Module>
+ </group>;
+}
+
+function TechFloor(){return <group position={[0,-1.85,0]} rotation={[-Math.PI/2,0,0]}>{[1.6,2.4,3.2,4.0,4.8].map(r=><mesh key={r}><ringGeometry args={[r-.009,r+.009,112]}/><meshBasicMaterial color="#69bee9" transparent opacity={.18} toneMapped={false}/></mesh>)}</group>}
+function SceneSetup(){const{gl}=useThree();useEffect(()=>{gl.outputColorSpace=THREE.SRGBColorSpace;gl.toneMapping=THREE.NoToneMapping;gl.setClearColor("#f9fcff",1)},[gl]);return <><color attach="background" args={["#f9fcff"]}/><TechFloor/></>}
+function CameraRig({zoom=1,resetToken=0}:{zoom?:number;resetToken?:number}){const{camera}=useThree();useEffect(()=>{camera.position.copy(new THREE.Vector3(7.6,3.4,9.1).multiplyScalar(zoom));camera.lookAt(0,.02,0);camera.updateProjectionMatrix()},[camera,zoom,resetToken]);return null}
 
 export default function EngineTwin({compact=false,explode=false,xray=false,focus="all",autoRotate=false,zoom=1,resetToken=0,onFocus}:Props){
- if(typeof document!=="undefined"&&!supportsWebGL())return <div className="webgl-fallback"><strong>3D Engine Viewer</strong><span>WebGL is unavailable. Enable hardware acceleration and reload.</span></div>;
- return <Canvas dpr={[1,1.45]} camera={{position:[8.4,3.2,9.2],fov:29,near:.1,far:100}} gl={{antialias:true,alpha:false,powerPreference:"default",preserveDrawingBuffer:false}}>
+ if(typeof document!=="undefined"&&!supportsWebGL())return <div className="webgl-fallback"><strong>3D Aero-Piston Engine Viewer</strong><span>WebGL is unavailable. Enable hardware acceleration and reload.</span></div>;
+ return <Canvas dpr={[1,1.45]} camera={{position:[7.6,3.4,9.1],fov:29,near:.1,far:100}} gl={{antialias:true,alpha:false,powerPreference:"default",preserveDrawingBuffer:false}}>
   <SceneSetup/><CameraRig zoom={zoom} resetToken={resetToken}/>
-  <Suspense fallback={<Html center><div className="three-loading">Loading 3D engine…</div></Html>}><EngineModel compact={compact} explode={explode} xray={xray} focus={focus} onFocus={onFocus}/>{!compact&&<Callouts focus={focus}/>}</Suspense>
-  <OrbitControls makeDefault enableDamping dampingFactor={.06} minDistance={5.9} maxDistance={16} target={[0,.02,0]} autoRotate={autoRotate} autoRotateSpeed={.55}/>
- </Canvas>
+  <AeroPistonEngine compact={compact} explode={explode} xray={xray} focus={focus} onFocus={onFocus}/>
+  <OrbitControls makeDefault enableDamping dampingFactor={.06} minDistance={5.7} maxDistance={16} target={[0,.02,0]} autoRotate={autoRotate} autoRotateSpeed={.55}/>
+ </Canvas>;
 }
-useGLTF.preload("/assets/engine/engine.glb");
