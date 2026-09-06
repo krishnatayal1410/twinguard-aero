@@ -19,8 +19,5 @@
         {"key": "Permissions-Policy", "value": "camera=(), microphone=(), geolocation=()"}
       ]
     }
-  ],
-  "rewrites": [
-    {"source": "/((?!assets/|robots.txt|sitemap.xml|manifest.webmanifest).*)", "destination": "/index.html"}
   ]
 }
