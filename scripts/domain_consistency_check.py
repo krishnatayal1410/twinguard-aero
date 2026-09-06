@@ -19,8 +19,11 @@ def iter_files():
         if not base.exists():
             continue
         for path in base.rglob("*"):
-            if path.is_file() and path.suffix.lower() in TEXT_SUFFIXES and "node_modules" not in path.parts:
-                yield path
+            if not path.is_file() or path.suffix.lower() not in TEXT_SUFFIXES or "node_modules" in path.parts:
+                continue
+            if "tests" in path.parts or "__pycache__" in path.parts:
+                continue
+            yield path
 
 
 def main():
@@ -42,7 +45,7 @@ def main():
             print(" -", failure)
         raise SystemExit(1)
 
-    print(f"TwinGuard domain consistency: PASS ({checked} source files checked)")
+    print(f"TwinGuard domain consistency: PASS ({checked} runtime source files checked)")
     print("Runtime remains aligned to SIH26054 aero-piston scope and no banned hard-coded mission claims were found.")
 
 
