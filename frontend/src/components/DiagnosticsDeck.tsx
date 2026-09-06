@@ -1,44 +1,18 @@
-import{motion}from"framer-motion";
-import{Activity,BrainCircuit,CheckCircle2,ShieldAlert,ShieldCheck,Signal,TriangleAlert}from"lucide-react";
+import{Brain,Database,FileText,ShieldCheck}from"lucide-react";
 import{useTwinStore}from"../store/twinStore";
-import{Badge,Card,Progress,SectionTitle,fmt,pct,pretty,tone}from"./ui";
-import{TrendChart}from"./TrendChart";
+import{pretty,pct}from"./ui";
+import{Bar,PageHeader,Panel,PanelTitle,StatusPill}from"./ReferenceUI";
 
 export default function DiagnosticsDeck(){
- const twin=useTwinStore(s=>s.twin),history=useTwinStore(s=>s.history);
- if(!twin)return <div className="empty-screen">Waiting for telemetry…</div>;
- const fault=twin.ai.probable_fault,normal=!twin.ai.anomaly&&fault==="normal";
- const confidence=[["Diagnostic engine",twin.confidence.ai],["Sensor integrity",twin.confidence.sensor],["Physics corroboration",twin.confidence.physics_agreement],["Data quality",twin.confidence.data_quality],["Decision confidence",twin.confidence.decision]];
- const synthetic=twin.ai.validation_scope==="SYNTHETIC_PROOF_OF_CONCEPT"||twin.twin_meta?.validation_scope==="SYNTHETIC_PROOF_OF_CONCEPT";
- return <motion.div className="diagnostics-page" initial={{opacity:0,y:8}} animate={{opacity:1,y:0}}>
-  <Card className="diagnosis-hero">
-   <div className="diagnosis-copy">
-    <span className="eyebrow">HYBRID PHYSICS + DIAGNOSTIC CORE</span>
-    <div className="diagnosis-title"><h1>{pretty(fault)}</h1><Badge kind={normal?"good":"warn"}>{normal?<CheckCircle2 size={13}/>:<TriangleAlert size={13}/>} {normal?"Normal operation":"Condition detected"}</Badge>{synthetic&&<Badge kind="blue">Synthetic POC</Badge>}</div>
-    <p>{normal?"No dominant fault mechanism is identified. The Digital Twin remains inside the current generic aero-piston surrogate envelope.":twin.maintenance.reason}</p>
-    <div className="diag-kpi-row">{[["Anomaly score",fmt(twin.ai.anomaly_score,3)],["Diagnostic confidence",pct(twin.ai.fault_confidence*100)],["Simulation RUL",`${fmt(twin.ai.rul_hours,1)} h`],["Runtime",pretty(twin.ai.model_state)]].map(x=><div key={x[0]}><span>{x[0]}</span><strong>{x[1]}</strong></div>)}</div>
-    {twin.ai.model_warning&&<p className="fineprint">{twin.ai.model_warning}</p>}
-   </div>
-   <div className={`diag-shield ${normal?"good":"warn"}`}><ShieldCheck/><strong>{pct(twin.confidence.decision)}</strong><span>Decision confidence</span></div>
-  </Card>
-
-  <div className="diag-main-grid">
-   <Card className="evidence-card"><SectionTitle eyebrow="EXPLAINABILITY" title="Evidence spectrum" action={<Badge kind="blue"><BrainCircuit size={13}/> Residual + diagnostic evidence</Badge>}/><div className="evidence-spectrum">{twin.ai.evidence.map((x,i)=><motion.div key={x.feature} initial={{opacity:0,x:-8}} animate={{opacity:1,x:0}} transition={{delay:i*.05}}><div><span>{pretty(x.feature)}</span><strong>{pct(x.weight*100)}</strong></div><Progress value={x.weight*100}/><small>Residual/current evidence value: {fmt(x.value,3)}</small></motion.div>)}</div></Card>
-   <Card><SectionTitle eyebrow="CONFIDENCE FUSION" title="Decision evidence quality"/><div className="confidence-list">{confidence.map(([name,v])=><div key={String(name)}><span>{name}</span><b>{pct(Number(v))}</b><Progress value={Number(v)} kind={Number(v)>88?"good":Number(v)>70?"blue":"warn"}/></div>)}</div><p className="fineprint">Scores are prototype engineering confidence indices, not calibrated aviation probabilities.</p></Card>
+ const twin=useTwinStore(s=>s.twin),ai=twin?.ai,r=twin?.residuals??{},tr=twin?.trends??{},trust=twin?.sensor_trust??{},fault=ai?.anomaly?pretty(ai.probable_fault):"Normal Operation",confidence=Number(ai?.fault_confidence??twin?.confidence.decision??86),sev=(twin?.health.overall??96)<65?"HIGH":(twin?.health.overall??96)<86?"MODERATE":"LOW";
+ const contrib=(ai?.evidence?.length?ai.evidence.slice(0,6):[{feature:"oil_pressure_residual",weight:.34,value:Number(r.oil_pressure??0)},{feature:"pressure_decline",weight:.22,value:Number(tr.oil_pressure_per_min??-4.1)},{feature:"oil_temperature",weight:.18,value:Number(r.oil_temperature??0)},{feature:"vibration_increase",weight:.14,value:Number(r.vibration??0)},{feature:"persistence",weight:.08,value:Number(ai?.anomaly_persistence_samples??0)},{feature:"sensor_trust",weight:.04,value:Number(twin?.confidence.sensor??90)}]);
+ const evidence=[`Oil pressure is ${Math.abs(Math.round(Number(r.oil_pressure??-.2)*100))}% below the expected value for the current operating condition.`,`Consistent ${Number(tr.oil_pressure_per_min??-4.1)<0?"downward":"abnormal"} pressure trend at ${Math.abs(Number(tr.oil_pressure_per_min??-4.1)).toFixed(1)} kPa/min.`,`Oil temperature is ${Math.abs(Number(r.oil_temperature??5)).toFixed(1)}°C ${Number(r.oil_temperature??5)>=0?"higher":"lower"} than expected.`,`Vibration shows sustained deviation of ${Math.abs(Number(r.vibration??.08)).toFixed(2)} g.`,`Deviation has persisted across multiple samples, reducing the likelihood of transient noise.`];
+ return <div className="ref-page diagnostics-ref-page"><PageHeader title="Diagnostics & Explainability" subtitle="Deep insights into AI decisions, model behavior, sensor trust, and system explainability"/>
+  <div className="ref-tabs"><button className="active">Why This Diagnosis?</button><button>Model Analysis</button><button>Sensor Trust</button><button>Data Quality</button><button>System Status</button></div>
+  <div className="diag-grid">
+   <Panel><PanelTitle icon={<FileText/>} title="Diagnosis Breakdown"/><div className={`diagnosis-card ${ai?.anomaly?"bad":"good"}`}><span>Current Diagnosis</span><b>{fault}</b></div><div className="diag-pair"><div><span>Confidence</span><b>{Math.round(confidence)}%</b><Bar value={confidence} color="blue"/></div><div><span>Severity</span><StatusPill tone={sev==="LOW"?"green":sev==="MODERATE"?"orange":"red"}>{sev}</StatusPill></div></div><h4>Top Contributing Signals</h4><div className="contrib-list diag-contrib">{contrib.map(x=><div key={x.feature}><span>{pretty(x.feature)}</span><Bar value={Math.min(100,Math.max(2,x.weight*100*2.3))} color="blue"/><b>{Math.round(x.weight*100)}%</b></div>)}</div></Panel>
+   <Panel><PanelTitle title="Evidence Explanation"/><div className="numbered-evidence">{evidence.map((x,i)=><div key={x}><i>{i+1}</i><p>{x}</p></div>)}</div><div className="model-reasoning"><Brain/><div><b>Model Reasoning</b><p>{ai?.anomaly?"Multiple correlated signals indicate a developing engine-system degradation rather than a transient anomaly. The decision combines residual magnitude, persistence, cross-sensor consistency and the current operating state.":"Current residuals remain inside the synthetic demonstrator's nominal operating envelope. No persistent correlated degradation pattern is active."}</p></div></div></Panel>
+   <div className="diag-right"><Panel><PanelTitle icon={<Database/>} title="Sensor Trust"/><div className="trust-list">{[["RPM",trust.rpm??99],["CHT",trust.cht??97],["EGT",trust.egt??96],["Oil Pressure",trust.oil_pressure??92],["Oil Temp",trust.oil_temperature??90],["Vibration",trust.vibration??90],["Battery",trust.battery_voltage??89]].map(([k,v])=><div key={String(k)}><span>{k}</span><Bar value={Number(v)}/><b>{Math.round(Number(v))}%</b></div>)}</div></Panel><Panel><PanelTitle icon={<ShieldCheck/>} title="Runtime Information"/><div className="runtime-list"><div><span>Model Mode</span><b>{pretty(ai?.model_state??"engineering fallback")}</b></div><div><span>Model Source</span><b>Synthetic Training Data</b></div><div><span>Validation Scope</span><b>{pretty(ai?.validation_scope??"engineering demonstrator")}</b></div><div><span>Fallback Mode</span><b>{ai?.model_warning?"Rule-based + consistency":"Available"}</b></div></div></Panel></div>
   </div>
-
-  <div className="diag-chart-grid">
-   <Card><SectionTitle eyebrow="THERMAL TREND" title="Cylinder Head Temperature"/><TrendChart data={history.cht??[]} label="CHT" unit="°C" height={220}/></Card>
-   <Card><SectionTitle eyebrow="LUBRICATION TREND" title="Oil Pressure"/><TrendChart data={history.oil_pressure??[]} label="Oil pressure" unit="bar" height={220} color="#20b783"/></Card>
-   <Card><SectionTitle eyebrow="MECHANICAL TREND" title="Vibration"/><TrendChart data={history.vibration??[]} label="Vibration" unit="g" height={220} color="#826ee6"/></Card>
-  </div>
-
-  <div className="diag-bottom-grid">
-   <Card><SectionTitle eyebrow="SUBSYSTEM HEALTH" title="Engineering health indices"/><div className="health-list">{Object.entries(twin.health).filter(([k])=>k!=="overall").map(([k,v])=><div key={k}><span>{pretty(k)}</span><b className={tone(v)}>{pct(v)}</b><Progress value={v} kind={tone(v)==="good"?"good":tone(v)==="warn"?"warn":"bad"}/></div>)}</div></Card>
-   <Card><SectionTitle eyebrow="SENSOR TRUST" title="Measurement integrity"/><div className="health-list">{Object.entries(twin.sensor_trust).map(([k,v])=><div key={k}><span>{pretty(k)}</span><b className={tone(v)}>{pct(v)}</b><Progress value={v}/></div>)}</div></Card>
-   <Card><SectionTitle eyebrow="PHYSICS RESIDUALS" title="Observed − expected"/><div className="residual-table">{Object.entries(twin.residuals).map(([k,v])=><div key={k}><span>{pretty(k)}</span><b>{Number(v)>=0?"+":""}{fmt(v,k.includes("pressure")||k.includes("vibration")?3:1)}</b></div>)}</div><p className="fineprint">Baseline: {twin.twin_meta?.physics_model??"generic surrogate"}</p></Card>
-  </div>
-
-  <Card className="event-console"><SectionTitle eyebrow="LIVE EVENT INTELLIGENCE" title="Current decision chain"/><div className="decision-chain">{[[Signal,"Telemetry","Validated, time-aligned and quality-scored"],[Activity,"Twin residuals",`${Object.keys(twin.residuals).length} observed-vs-expected channels evaluated`],[BrainCircuit,"Diagnosis",normal?"No persistent condition detected":`${pretty(fault)} is the leading hypothesis`],[ShieldCheck,"Decision support",`${twin.readiness.label} · ${pretty(twin.maintenance.priority)}`]].map(([Icon,title,txt],i)=><div key={String(title)}><span>{i+1}</span><Icon size={18}/><div><strong>{title as string}</strong><small>{txt as string}</small></div></div>)}</div></Card>
- </motion.div>
+ </div>
 }
