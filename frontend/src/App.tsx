@@ -7,6 +7,7 @@ import type{ViewName}from"./types/twin";
 import ErrorBoundary from"./components/ErrorBoundary";
 import"./styles/reference.css";
 import"./styles/functional.css";
+import"./styles/interactions.css";
 
 const CommandCenter=lazy(()=>import("./components/CommandCenter"));
 const DigitalTwinDeck=lazy(()=>import("./components/DigitalTwinDeck"));
