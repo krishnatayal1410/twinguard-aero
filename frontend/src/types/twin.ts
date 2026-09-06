@@ -18,6 +18,7 @@ export interface TwinState{
   telemetry:Record<string,number|string>;
   expected:Record<string,number>;
   residuals:Record<string,number>;
+  trends?:Record<string,number>;
   sensor_trust:Record<string,number>;
   data_quality:Record<string,number|string>;
   health:{
@@ -40,6 +41,8 @@ export interface TwinState{
     model_state:string;
     validation_scope?:string;
     rul_basis?:string;
+    feature_contract?:string;
+    anomaly_persistence_samples?:number;
     model_warning?:string|null;
   };
   confidence:{
@@ -47,6 +50,7 @@ export interface TwinState{
     sensor:number;
     physics_agreement:number;
     data_quality:number;
+    temporal_persistence?:number;
     decision:number;
   };
   maintenance:{
@@ -82,6 +86,10 @@ export interface MissionResult{
     average_throttle_pct:number;
   };
   explanation:string;
+  mission_feasibility_index?:number;
+  rul_margin_ratio?:number;
+  risk_factors?:string[];
+  validation_scope?:string;
 }
 
 export interface ReplayMission{
