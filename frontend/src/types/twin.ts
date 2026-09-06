@@ -30,13 +30,75 @@ export interface RuntimeValidity{
   decision_eligible:boolean;
 }
 
+export interface TelemetryState{
+  engine_id:string;
+  timestamp:string;
+  rpm:number;
+  throttle:number;
+  cht:number;
+  egt:number;
+  oil_pressure:number;
+  oil_temperature:number;
+  fuel_flow:number;
+  vibration:number;
+  battery_voltage:number;
+  alternator_voltage:number;
+  altitude:number;
+  ambient_temperature:number;
+  injection_timing:number;
+  operating_hours:number;
+}
+
+export interface ExpectedState{
+  cht:number;
+  egt:number;
+  oil_pressure:number;
+  oil_temperature:number;
+  fuel_flow:number;
+  vibration:number;
+  battery_voltage:number;
+  alternator_voltage:number;
+  injection_timing:number;
+}
+
+export interface ResidualState{
+  cht_residual:number;
+  egt_residual:number;
+  oil_pressure_residual:number;
+  oil_temperature_residual:number;
+  fuel_flow_residual:number;
+  vibration_residual:number;
+  battery_voltage_residual:number;
+  alternator_voltage_residual:number;
+  injection_timing_residual:number;
+}
+
+export interface TrendState{
+  oil_pressure_per_min:number;
+  oil_temperature_per_min:number;
+  cht_per_min:number;
+  egt_per_min:number;
+  vibration_per_min:number;
+  battery_voltage_per_min:number;
+  alternator_voltage_per_min:number;
+  health_index_per_min:number;
+}
+
+export interface TwinEvent{
+  timestamp:string;
+  type:string;
+  severity:"info"|"warning"|"critical"|"success";
+  message:string;
+}
+
 export interface TwinState{
   engine_id:string;
   timestamp:string;
-  telemetry:Record<string,number|string>;
-  expected:Record<string,number>;
-  residuals:Record<string,number>;
-  trends?:Record<string,number>;
+  telemetry:TelemetryState;
+  expected:ExpectedState;
+  residuals:ResidualState;
+  trends:TrendState;
+  events:TwinEvent[];
   sensor_trust:Record<string,number>;
   data_quality:Record<string,number|string>;
   runtime_validity?:RuntimeValidity;
@@ -64,6 +126,17 @@ export interface MissionResult{
 }
 
 export interface ReplayMission{id:number;engine_id:string;label:string;status:string;started_at:string;ended_at?:string;summary?:Record<string,unknown>}
+export interface ReplaySample{
+  timestamp:string;
+  health:number;
+  rul:number;
+  cht:number;
+  oil_pressure:number;
+  vibration:number;
+  anomaly:boolean;
+  fault:string;
+  maintenance:string;
+}
 
 export interface SystemStatus{
   service:string;version:string;environment:string;engine_id:string;database:string;
