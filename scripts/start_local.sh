@@ -13,6 +13,31 @@ command -v curl >/dev/null || { echo "ERROR: curl is required."; exit 1; }
 [ -d .venv ] || python3 -m venv .venv
 source .venv/bin/activate
 
+port_free() {
+  python - "$1" <<'PY'
+import socket, sys
+port=int(sys.argv[1])
+s=socket.socket()
+try:
+    s.bind(("127.0.0.1",port))
+except OSError:
+    sys.exit(1)
+finally:
+    s.close()
+PY
+}
+
+if ! port_free 8000; then
+  echo "ERROR: Port 8000 is already in use. A previous TwinGuard backend is probably still running."
+  echo "Run: pkill -f 'uvicorn app.main:app' || true"
+  exit 1
+fi
+if ! port_free 5173; then
+  echo "ERROR: Port 5173 is already in use. A previous TwinGuard/Vite frontend is probably still running."
+  echo "Run: pkill -f 'vite' || true"
+  exit 1
+fi
+
 echo "[1/7] Installing Python dependencies…"
 python -m pip install --disable-pip-version-check -q --upgrade pip
 python -m pip install --disable-pip-version-check -q -r backend/requirements.txt
@@ -39,9 +64,6 @@ export DATABASE_URL="${DATABASE_URL:-sqlite:///$ROOT/data/runtime/twinguard.db}"
 export CORS_ORIGINS="http://localhost:5173,http://127.0.0.1:5173"
 export TRUSTED_HOSTS="localhost,127.0.0.1"
 export PYTHONUNBUFFERED=1
-
-# Stable macOS default: avoid native XGBoost libraries during app boot.
-# The app still runs anomaly detection + engineering fault/RUL fallback.
 export TWINGUARD_NATIVE_ML="${TWINGUARD_NATIVE_ML:-0}"
 
 if [ ! -f .runtime/ingest.key ]; then
@@ -84,24 +106,17 @@ for i in $(seq 1 240); do
     echo "-----------------------"
     exit 1
   fi
-
   if curl -fsS --max-time 1 http://127.0.0.1:8000/health >/dev/null 2>&1; then
     BACKEND_READY=1
     break
   fi
-
-  if [ $((i % 20)) -eq 0 ]; then
-    echo "Waiting for backend… $((i / 2))s"
-  fi
+  if [ $((i % 20)) -eq 0 ]; then echo "Waiting for backend… $((i / 2))s"; fi
   sleep .5
 done
 
 if [ "$BACKEND_READY" -ne 1 ]; then
-  echo
   echo "ERROR: Backend did not become ready within 120 seconds."
-  echo "----- backend.log -----"
   cat .runtime/logs/backend.log
-  echo "-----------------------"
   exit 1
 fi
 
@@ -116,13 +131,12 @@ SIMULATOR_PID=$!
 
 echo "[7/7] Starting frontend…"
 : > .runtime/logs/frontend.log
-(cd frontend && npm run dev -- --force --host 127.0.0.1) >.runtime/logs/frontend.log 2>&1 &
+(cd frontend && npm run dev -- --force --strictPort --host 127.0.0.1 --port 5173) >.runtime/logs/frontend.log 2>&1 &
 FRONTEND_PID=$!
 
 FRONTEND_READY=0
 for i in $(seq 1 120); do
   if ! kill -0 "$FRONTEND_PID" 2>/dev/null; then
-    echo
     echo "ERROR: Frontend process exited."
     cat .runtime/logs/frontend.log
     exit 1
