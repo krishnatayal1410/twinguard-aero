@@ -57,9 +57,9 @@ test("persisted replay sample view loads and plays",async({page})=>{
  await page.getByRole("button",{name:"Replay",exact:true}).click();
  await expect(page.getByText("Persisted Telemetry Timeline",{exact:true})).toBeVisible();
  await expect(page.getByText(/Stored samples/)).toBeVisible();
- await page.getByTitle("Play").click();
+ await page.getByRole("button",{name:"Play",exact:true}).click();
  await page.waitForTimeout(600);
- await page.getByTitle("Pause").click();
+ await page.getByRole("button",{name:"Pause",exact:true}).click();
  await expect(page.getByText("Playback Engineering Snapshot",{exact:true})).toBeVisible();
 });
 
