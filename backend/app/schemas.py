@@ -58,11 +58,11 @@ class Telemetry(BaseModel):
 
 
 class MissionRequest(BaseModel):
-    mission_type: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=40)] = "endurance"
-    duration_hours: float = Field(8, ge=.25, le=48)
-    cruise_altitude_m: float = Field(5500, ge=0, le=12000)
-    ambient_temp_c: float = Field(35, ge=-50, le=70)
-    average_throttle_pct: float = Field(75, ge=10, le=100)
+    mission_type: Literal["endurance", "high_altitude", "hot_weather", "rapid_throttle", "patrol"] = "endurance"
+    duration_hours: float = Field(8, ge=.25, le=48, description="Planned mission duration, h")
+    cruise_altitude_m: float = Field(5500, ge=0, le=12000, description="Planned representative cruise altitude, m")
+    ambient_temp_c: float = Field(35, ge=-50, le=70, description="Representative ambient temperature, degC")
+    average_throttle_pct: float = Field(75, ge=10, le=100, description="Representative average throttle/load, percent")
 
 
 class FaultCommand(BaseModel):
