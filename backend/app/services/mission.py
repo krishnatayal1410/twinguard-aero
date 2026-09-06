@@ -8,17 +8,47 @@ def clamp(value, low=0.0, high=1.0):
 class MissionEngine:
     """Mission-aware decision-support model for the synthetic TwinGuard POC.
 
-    The output is a transparent engineering index, not a certified probability
-    of mission success or an autonomous flight-release decision.
+    Mission profile names are not decorative labels: each profile applies an
+    explicit duty-cycle modifier to the transparent stress components below.
+    These modifiers are proof-of-concept engineering assumptions and must be
+    calibrated against authorized target-engine/test-rig mission data before
+    operational use.
     """
+
+    PROFILE_MODIFIERS = {
+        "endurance": {
+            "stress": .05, "thermal": .01, "mechanical": .01, "lubrication": .05, "combustion": .01, "electrical": .04,
+            "description": "Sustained load and long-duration lubrication/electrical exposure.",
+        },
+        "high_altitude": {
+            "stress": .08, "thermal": .04, "mechanical": .02, "lubrication": .03, "combustion": .10, "electrical": .02,
+            "description": "Reduced-density operation with stronger combustion/mixture sensitivity.",
+        },
+        "hot_weather": {
+            "stress": .07, "thermal": .13, "mechanical": .01, "lubrication": .08, "combustion": .04, "electrical": .02,
+            "description": "Higher cooling and oil-temperature burden in hot ambient conditions.",
+        },
+        "rapid_throttle": {
+            "stress": .11, "thermal": .05, "mechanical": .12, "lubrication": .05, "combustion": .12, "electrical": .01,
+            "description": "Transient load changes emphasize mechanical and combustion stress.",
+        },
+        "patrol": {
+            "stress": .04, "thermal": .02, "mechanical": .05, "lubrication": .03, "combustion": .05, "electrical": .03,
+            "description": "Variable-load patrol duty with moderate transient exposure.",
+        },
+    }
 
     @staticmethod
     def label(value):
         return "HIGH" if value >= .90 else "MEDIUM" if value >= .55 else "LOW"
 
-    def _components(self, state, duration, altitude, temperature, throttle):
+    def _profile(self, mission_type):
+        return self.PROFILE_MODIFIERS.get(str(mission_type), self.PROFILE_MODIFIERS["endurance"])
+
+    def _components(self, state, duration, altitude, temperature, throttle, mission_type="endurance"):
         health = state["health"]
         overall = float(health["overall"])
+        profile = self._profile(mission_type)
         duration_n = clamp(duration / 12, 0, 1.7)
         altitude_n = clamp(altitude / 8000, 0, 1.5)
         heat_n = clamp((temperature - 15) / 35, 0, 1.5)
@@ -45,15 +75,16 @@ class MissionEngine:
             + .18 * health_penalty
             + .12 * trend_penalty
             + .10 * persistence_penalty
-            + .22 * rul_penalty,
+            + .22 * rul_penalty
+            + profile["stress"],
             0,
             1.7,
         )
-        thermal = clamp(.34 * load_n + .29 * heat_n + .18 * altitude_n + .29 * (100 - health["thermal"]) / 40, 0, 1.7)
-        mechanical = clamp(.38 * load_n + .20 * duration_n + .31 * (100 - health["mechanical"]) / 40 + .12 * trend_penalty, 0, 1.7)
-        lubrication = clamp(.27 * load_n + .21 * duration_n + .39 * (100 - health["lubrication"]) / 40 + .15 * trend_penalty, 0, 1.7)
-        combustion = clamp(.28 * load_n + .18 * altitude_n + .20 * heat_n + .36 * (100 - health.get("combustion", 100)) / 40, 0, 1.7)
-        electrical = clamp(.24 * duration_n + .42 * (100 - health["electrical"]) / 40, 0, 1.7)
+        thermal = clamp(.34 * load_n + .29 * heat_n + .18 * altitude_n + .29 * (100 - health["thermal"]) / 40 + profile["thermal"], 0, 1.7)
+        mechanical = clamp(.38 * load_n + .20 * duration_n + .31 * (100 - health["mechanical"]) / 40 + .12 * trend_penalty + profile["mechanical"], 0, 1.7)
+        lubrication = clamp(.27 * load_n + .21 * duration_n + .39 * (100 - health["lubrication"]) / 40 + .15 * trend_penalty + profile["lubrication"], 0, 1.7)
+        combustion = clamp(.28 * load_n + .18 * altitude_n + .20 * heat_n + .36 * (100 - health.get("combustion", 100)) / 40 + profile["combustion"], 0, 1.7)
+        electrical = clamp(.24 * duration_n + .42 * (100 - health["electrical"]) / 40 + profile["electrical"], 0, 1.7)
         return {
             "stress": stress,
             "thermal": thermal,
@@ -67,13 +98,11 @@ class MissionEngine:
             "rul": rul,
             "conservative_rul": conservative_rul,
             "upper_rul": upper_rul,
+            "profile": profile,
         }
 
     @staticmethod
     def _endurance_projection(comp, mission_duration):
-        # Convert the conservative lower RUL bound into a mission-profile
-        # endurance estimate. This remains a POC engineering index, not a
-        # certified safe-flight limit.
         consumption_multiplier = 1.0 + .75 * comp["stress"]
         projected_endurance = max(0.0, comp["conservative_rul"] / consumption_multiplier)
         reserve_hours = max(1.0, .25 * mission_duration)
@@ -87,7 +116,8 @@ class MissionEngine:
         alt = float(req.cruise_altitude_m)
         temp = float(req.ambient_temp_c)
         thr = float(req.average_throttle_pct)
-        comp = self._components(state, dur, alt, temp, thr)
+        mission_type = str(req.mission_type)
+        comp = self._components(state, dur, alt, temp, thr, mission_type)
 
         max_risk = max(comp["stress"], comp["thermal"], comp["mechanical"], comp["lubrication"], comp["combustion"], comp["electrical"])
         loss = 2.2 + 7.5 * comp["stress"] + max(0, 100 - h) * .05 + min(10, comp["degradation_rate"] * .22)
@@ -120,8 +150,7 @@ class MissionEngine:
                 risk_factors.append(f"{name.title()} stress is {self.label(comp[name]).lower()}")
         if state["ai"].get("anomaly"):
             risk_factors.append(f"Active diagnostic condition: {state['ai'].get('probable_fault','unknown').replace('_',' ')}")
-        if not risk_factors:
-            risk_factors.append("No dominant mission-risk contributor in the current synthetic envelope")
+        risk_factors.append(f"Mission profile modifier: {comp['profile']['description']}")
 
         feasibility = clamp(
             100
@@ -136,13 +165,17 @@ class MissionEngine:
         alt2 = max(2500.0, alt - 800)
         dur2 = max(.5, dur * .82)
         thr2 = max(52.0, thr - 10)
-        alternative = self._components(state, dur2, alt2, temp, thr2)
+        alternative = self._components(state, dur2, alt2, temp, thr2, mission_type)
         alternative_max = max(alternative["stress"], alternative["thermal"], alternative["mechanical"], alternative["lubrication"], alternative["combustion"], alternative["electrical"])
         alt_endurance, alt_horizon, alt_margin, alt_reserve = self._endurance_projection(alternative, dur2)
 
         horizon_status = "INSUFFICIENT" if decision_horizon < dur else "LIMITED" if decision_horizon < dur + reserve_hours else "AVAILABLE"
+        profile_weights = {k: v for k, v in comp["profile"].items() if k != "description"}
 
         return {
+            "mission_type": mission_type,
+            "profile_modifier_description": comp["profile"]["description"],
+            "profile_modifiers": profile_weights,
             "overall_risk": risk,
             "decision": decision,
             "stress_index": comp["stress"],
@@ -185,6 +218,6 @@ class MissionEngine:
                 "decision_horizon_hours": round(alt_horizon, 2),
                 "engineering_reserve_hours": round(alt_reserve, 2),
             },
-            "explanation": "Mission assessment combines the current synchronized Twin state, subsystem health, temporal degradation, uncertainty-aware simulation-derived RUL margin, planned duration, altitude, ambient temperature and average load.",
+            "explanation": "Mission assessment combines the synchronized Twin state, subsystem health, temporal degradation, uncertainty-aware RUL margin, explicit mission-profile duty-cycle modifiers, planned duration, altitude, ambient temperature and average load.",
             "validation_scope": "SYNTHETIC_DECISION_SUPPORT_INDEX_NOT_CERTIFIED_PROBABILITY",
         }
