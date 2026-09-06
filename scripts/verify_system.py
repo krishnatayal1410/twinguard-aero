@@ -5,7 +5,7 @@ import secrets
 import time
 from urllib.request import Request, urlopen
 
-BASE="http://127.0.0.1:8000";KEY=os.getenv("TWINGUARD_INGEST_KEY","");TOKEN=""
+BASE=os.getenv("TWINGUARD_API","http://127.0.0.1:8000");KEY=os.getenv("TWINGUARD_INGEST_KEY","");TOKEN=""
 
 
 def headers(extra=None):
@@ -49,12 +49,38 @@ except Exception as exc:
 
 
 time.sleep(2)
-check("Digital Twin",lambda:0<=get("/api/v1/twin/ENGINE-01")["health"]["overall"]<=100)
-check("Aero-piston model identity",lambda:get("/api/v1/twin/ENGINE-01")["twin_meta"]["physics_model"]=="generic-aero-piston-surrogate-v2")
-check("Temporal trends",lambda:"oil_pressure_per_min" in get("/api/v1/twin/ENGINE-01")["trends"])
+
+
+def twin_check():
+    state=get("/api/v1/twin/ENGINE-01")
+    assert 0<=state["health"]["overall"]<=100
+    assert state["twin_meta"]["physics_model"]=="generic-aero-piston-surrogate-v2"
+    assert "oil_pressure_per_min" in state["trends"]
+    interval=state["ai"]["rul_interval_hours"]
+    assert 0<=interval["lower"]<=interval["estimate"]<=interval["upper"]
+    assert interval["calibrated_probability_interval"] is False
+    validity=state["runtime_validity"]
+    assert validity["stale"] is False
+    assert validity["decision_eligible"] is True
+check("Synchronized uncertainty-aware Digital Twin",twin_check)
+
 check("Diagnostics",lambda:get("/api/v1/diagnostics/ENGINE-01")["confidence"]["decision"]>=0)
-check("System Status",lambda:bool(get("/api/v1/system/status")["security"]["trusted_hosts"]))
-check("Maintenance",lambda:bool(get("/api/v1/maintenance/ENGINE-01")["maintenance"]["priority"]))
+
+
+def status_check():
+    status=get("/api/v1/system/status")
+    assert status["security"]["trusted_hosts"]
+    assert status["telemetry"]["available"] is True
+    assert status["telemetry"]["stale"] is False
+    assert status["telemetry"]["decision_eligible"] is True
+check("Runtime validity gate",status_check)
+
+
+def maintenance_check():
+    result=get("/api/v1/maintenance/ENGINE-01")
+    assert result["maintenance"]["priority"]
+    assert result["rul_interval_hours"]["lower"]<=result["rul_hours"]<=result["rul_interval_hours"]["upper"]
+check("Maintenance + RUL uncertainty",maintenance_check)
 
 
 def mission_check():
@@ -62,8 +88,15 @@ def mission_check():
     assert result["overall_risk"] in {"LOW","MEDIUM","HIGH"}
     assert 0<=result["mission_feasibility_index"]<=100
     assert result["rul_margin_ratio"]>=0
+    assert result["conservative_rul_margin_ratio"]<=result["rul_margin_ratio"]
+    assert result["decision_horizon_hours"]>=0
+    assert result["engineering_reserve_hours"]>0
+    assert result["current_rul_interval_hours"]["lower"]<=result["current_rul_hours"]<=result["current_rul_interval_hours"]["upper"]
     assert result["risk_factors"]
-    assert "projected_risk" in result["lower_stress_alternative"]
+    alt=result["lower_stress_alternative"]
+    assert "projected_risk" in alt
+    assert alt["projected_stress_index"]<=result["stress_index"]
+    assert "mission_margin_hours" in alt and "decision_horizon_hours" in alt
 check("Mission Reliability Twin",mission_check)
 
 
@@ -71,14 +104,25 @@ def lubrication_fault():
     post("/api/v1/simulation/fault",{"fault":"lubrication","severity":0.85})
     deadline=time.time()+45
     detected=False
-    while time.time()<deadline:
-        time.sleep(1)
-        state=get("/api/v1/twin/ENGINE-01")
-        if state["ai"]["anomaly"] and state["health"]["lubrication"]<85:
-            detected=True;break
-    post("/api/v1/simulation/reset")
+    baseline_margin=None
+    degraded_margin=None
+    try:
+        baseline=post("/api/v1/mission/analyze",{"mission_type":"endurance","duration_hours":8,"cruise_altitude_m":5500,"ambient_temp_c":35,"average_throttle_pct":75})
+        baseline_margin=baseline["mission_margin_hours"]
+        while time.time()<deadline:
+            time.sleep(1)
+            state=get("/api/v1/twin/ENGINE-01")
+            if state["ai"]["anomaly"] and state["health"]["lubrication"]<85:
+                degraded=post("/api/v1/mission/analyze",{"mission_type":"endurance","duration_hours":8,"cruise_altitude_m":5500,"ambient_temp_c":35,"average_throttle_pct":75})
+                degraded_margin=degraded["mission_margin_hours"]
+                detected=True
+                break
+    finally:
+        post("/api/v1/simulation/reset")
     assert detected,"progressive lubrication scenario did not become observable within 45 s"
-check("Aero-piston Lubrication Scenario",lubrication_fault)
+    assert baseline_margin is not None and degraded_margin is not None
+    assert degraded_margin<baseline_margin,"degraded engine did not reduce mission margin"
+check("Aero-piston degradation changes mission margin",lubrication_fault)
 
 
 def replay():
