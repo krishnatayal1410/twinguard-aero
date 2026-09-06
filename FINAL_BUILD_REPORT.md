@@ -1,116 +1,118 @@
-# TwinGuard Aero — SIH26054 Overhaul Verification Report
+# TwinGuard Aero — SIH26054 Verified Build Report
 
-**Branch:** `sih26054-overhaul`  
-**Target repository:** `krishnatayal1410/twinguard-aero`  
-**Main branch status:** intentionally left unchanged pending review/merge authorization.
+**Repository:** `krishnatayal1410/twinguard-aero`  
+**Verified branch:** `main`  
+**Verified merge commit:** `94a2a26033d0c868b6b8a9c98e9b04dbe15de17e`  
+**CI run:** `34016621172`  
+**CI result:** **PASS**
 
 ## Completion status
 
 **Substantially completed and verified as a synthetic software proof-of-concept.**
 
-The overhaul corrects the previous propulsion-system mismatch, strengthens the Digital Twin logic, removes unsupported mission claims, adds temporal degradation intelligence, retrains the synthetic model pack against the new aero-piston contract, and introduces automated end-to-end verification.
+The SIH26054 overhaul is merged into `main` and the post-merge CI pipeline passed backend, frontend and live integration gates.
+
+TwinGuard now aligns to the actual problem target: a mission-aware hybrid Digital Twin for **aero-piston engines used in MALE UAVs**. It no longer relies on the previous turboshaft/turbine-blade runtime framing or hard-coded mission-success values.
 
 It does **not** establish real MALE-UAV engine validation, certified RUL, calibrated mission-success probability, OEM/DRDO geometric fidelity, or operational airworthiness.
 
 ---
 
-## Automated verification evidence
+## Post-merge verification evidence
 
-Latest CI gate on the overhaul branch:
+The verified `main` CI run passed:
 
-- Python setup / dependency install: **PASS**
+- Docker Compose configuration validation: **PASS**
+- Python dependency/setup path: **PASS**
 - Python compilation: **PASS**
-- Backend test suite: **PASS**
-- Frontend dependency install: **PASS**
-- TypeScript typecheck / Vite production build: **PASS**
-- Live FastAPI backend startup: **PASS**
-- Live simulator startup: **PASS**
-- End-to-end system verifier: **PASS**
-- Authentication flow: **PASS**
-- Synchronized Digital Twin state: **PASS**
-- Aero-piston physics-model identity: **PASS**
-- Temporal trend availability: **PASS**
-- Diagnostics / confidence output: **PASS**
-- Maintenance output: **PASS**
+- SIH26054 aero-piston domain-consistency guard: **PASS**
+- production signup-default security gate: **PASS**
+- backend regression/unit suite: **PASS**
+- packaged native synthetic ML artifact loading: **PASS**
+- frontend dependency installation: **PASS**
+- TypeScript/Vite production build: **PASS**
+- live FastAPI backend startup: **PASS**
+- live synthetic simulator startup: **PASS**
+- end-to-end system verifier: **PASS**
+- authentication flow: **PASS**
+- synchronized Digital Twin state: **PASS**
+- runtime telemetry-validity gate: **PASS**
+- RUL uncertainty band: **PASS**
+- maintenance output: **PASS**
 - Mission Reliability Twin output: **PASS**
-- Progressive lubrication scenario observability: **PASS**
-- Mission replay flow: **PASS**
+- conservative mission margin / decision horizon: **PASS**
+- progressive lubrication degradation observability: **PASS**
+- same-mission degraded-state reliability direction: **PASS**
+- mission replay flow: **PASS**
 
-The integration verifier launches the actual backend and simulator together instead of testing only isolated functions.
-
----
-
-## Synthetic model pack
-
-A fresh `aero-piston-v2` synthetic model pack was trained and runtime-contract checked.
-
-Recorded synthetic proof-of-concept metrics:
-
-- Fault classification accuracy: **0.8909**
-- Fault macro F1: **0.8880**
-- RUL MAE: **10.186 h**
-- RUL RMSE: **12.490 h**
-- RUL R²: **0.6779**
-
-These numbers come from synthetic data produced by the proof-of-concept generator. They are useful for software/model-development validation only and must **not** be represented as real-engine accuracy or real RUL performance.
-
-The model manifest now records:
-
-- schema: `aero-piston-v2`
-- training source: synthetic physics-inspired generator
-- validation scope: `SYNTHETIC_PROOF_OF_CONCEPT`
-- 10 aero-piston-relevant fault classes
-- a 22-feature telemetry/residual contract
-
-Runtime model loading rejects stale artifacts whose feature order or fault taxonomy does not match the current contract.
+The integration verifier runs the actual backend and simulator together rather than validating only isolated functions.
 
 ---
 
-## Major corrections completed
+## Verified architecture
+
+```text
+Simulator / future ECU-CAN-MQTT source
+            │
+            ▼
+Canonical Telemetry Contract
+            │
+            ▼
+FastAPI validation + synchronization
+            │
+            ▼
+Real-Time Twin State
+            │
+     ┌──────┴──────┐
+     ▼             ▼
+Observed       Expected Healthy
+State          Surrogate State
+     └──────┬──────┘
+            ▼
+         Residuals
+            │
+            ▼
+ Temporal Trends / Persistence
+            │
+   ┌────────┼────────┐
+   ▼        ▼        ▼
+Sensor   Diagnosis  Health
+Trust    / Anomaly  Indices
+   └────────┼────────┘
+            ▼
+      RUL + Uncertainty
+            │
+            ▼
+ Mission Reliability Twin
+            │
+   ┌────────┴─────────┐
+   ▼                  ▼
+Mission Margin    Counterfactual
+Decision Horizon  Lower-Stress Plan
+            │
+            ▼
+ Explainability / Replay / HMI
+```
+
+---
+
+## Major engineering corrections
 
 ### 1. Correct propulsion-system identity
 
-The previous UI and failure taxonomy contained turboshaft concepts such as compressor/turbine stages and turbine-blade degradation. The overhaul aligns the product with the SIH26054 aero-piston-engine target.
+Runtime taxonomy and HMI are now aero-piston specific. The conceptual 3D HMI represents cylinder banks, crankcase/rotating core, lubrication, fuel/induction, exhaust/thermal and electrical/alternator subsystems.
 
-The new conceptual 3D HMI represents:
-
-- horizontally opposed cylinder banks,
-- crankcase / rotating core,
-- lubrication subsystem,
-- fuel / induction path,
-- exhaust / thermal path,
-- electrical / alternator subsystem.
-
-The 3D geometry is an original conceptual visualization, not proprietary CAD and not the physics model itself.
+The 3D geometry is an engineering visualization, not proprietary CAD and not the Digital Twin physics model itself.
 
 ### 2. Canonical telemetry and units
 
-The Pydantic telemetry schema is now the source of truth and explicitly documents units, including oil pressure in bar for the current proof-of-concept.
+The Pydantic telemetry schema is the source of truth. Current proof-of-concept channels include RPM, throttle, CHT, EGT, oil pressure, oil temperature, fuel flow, vibration, battery voltage, alternator voltage, altitude, ambient temperature, timing proxy and operating hours.
 
-Added/retained channels include:
+Oil pressure is explicitly represented in **bar** in the current demonstrator.
 
-- RPM,
-- throttle,
-- CHT,
-- EGT,
-- oil pressure,
-- oil temperature,
-- fuel flow,
-- vibration,
-- battery voltage,
-- alternator voltage,
-- altitude,
-- ambient temperature,
-- injection/ignition timing proxy,
-- operating hours.
+### 3. Progressive aero-piston fault simulation
 
-### 3. Fixed simulator control path
-
-The simulator can now read the selected fault configuration using the ingest credential. Fault selection no longer silently falls back to healthy operation because of operator-authentication mismatch.
-
-### 4. Progressive aero-piston fault scenarios
-
-The simulator now supports:
+The synthetic simulator supports:
 
 - normal,
 - lubrication degradation,
@@ -123,53 +125,21 @@ The simulator now supports:
 - combustion instability,
 - alternator degradation.
 
-Fault severity develops progressively instead of switching instantaneously.
+Fault severity ramps progressively so the demo shows degradation developing over time.
 
-### 5. Expected-state Digital Twin
+### 4. Expected-state hybrid Twin
 
-The physics layer is explicitly identified as `generic-aero-piston-surrogate-v2`.
+The physics layer is identified as `generic-aero-piston-surrogate-v2` and produces operating-condition-aware expected values and observed-minus-expected residuals.
 
-It calculates operating-condition-aware expected values and residuals for thermal, lubrication, fuel, vibration and electrical/timing channels.
+This is intentionally a generic low-order surrogate, not an OEM performance map.
 
-This is a low-order generic surrogate for architecture demonstration, not a calibrated OEM performance map.
+### 5. Sensor Trust redesign
 
-### 6. Temporal intelligence
+Sensor Trust is separated from engine health. A real multi-signal degradation can produce large residuals while the underlying sensors remain credible; isolated, poorly corroborated disagreement can instead reduce sensor trust.
 
-TwinGuard now retains short-window history and evaluates:
+### 6. Expanded subsystem health
 
-- oil-pressure trend,
-- oil-temperature trend,
-- CHT trend,
-- EGT trend,
-- vibration trend,
-- battery-voltage trend,
-- alternator-voltage trend,
-- health-index trend,
-- anomaly persistence.
-
-Fault/RUL fallback logic therefore uses both current residuals and degradation direction.
-
-### 7. Sensor Trust redesign
-
-Sensor Trust is no longer equivalent to “distance from healthy physics.”
-
-A corroborated physical degradation can create large residuals while its sensors remain credible. Isolated implausible disagreement or sudden jumps reduce trust more strongly.
-
-This helps distinguish:
-
-```text
-real engine degradation
-```
-
-from:
-
-```text
-possible sensor/data fault
-```
-
-### 8. Expanded subsystem health
-
-Current engineering health indices:
+Current prototype engineering health indices:
 
 - thermal,
 - lubrication,
@@ -179,53 +149,68 @@ Current engineering health indices:
 - sensor integrity,
 - overall.
 
-These are transparent prototype engineering scores, not certified airworthiness percentages.
+These are not certified airworthiness percentages.
 
-### 9. Diagnostic provenance and safe ML loading
+### 7. Temporal intelligence
 
-The runtime exposes:
+The Twin tracks short-window trends for oil pressure, oil temperature, CHT, EGT, vibration, battery voltage, alternator voltage and overall health, plus anomaly persistence.
 
-- model state,
-- feature contract,
-- validation scope,
-- RUL basis,
-- model compatibility warning.
+### 8. Diagnostic / prognostic model provenance
 
-Incompatible old binaries are rejected rather than silently used with the wrong feature or fault definitions.
+The stable default computation path is explicit `ENGINEERING_FALLBACK` logic. A compatible packaged synthetic Isolation Forest/XGBoost fault/RUL model pack is also present and separately verified by CI when native ML is enabled.
+
+The runtime validates feature order and fault taxonomy before native artifacts are accepted.
+
+### 9. RUL uncertainty
+
+TwinGuard now exposes:
+
+- RUL point estimate,
+- conservative lower bound,
+- upper bound,
+- uncertainty-band basis,
+- explicit flag that the band is **not a calibrated probability interval**.
+
+Mission analysis uses the conservative lower RUL bound rather than blindly trusting the point estimate.
 
 ### 10. Mission Reliability Twin
 
-Mission analysis now considers:
+Mission analysis considers current Twin health, subsystem condition, degradation trend, anomaly persistence, uncertainty-aware RUL margin, mission duration, altitude, ambient temperature, average load and an explicit mission-profile duty-cycle modifier.
 
-- current health,
-- subsystem condition,
-- degradation rate,
-- anomaly persistence,
-- simulation-derived RUL,
-- RUL / mission-duration margin,
-- planned mission duration,
-- cruise altitude,
-- ambient temperature,
-- average throttle/load.
+Supported mission profiles:
 
-Outputs now include:
+- endurance,
+- high altitude,
+- hot weather,
+- rapid throttle,
+- patrol.
 
-- risk class,
+Outputs include:
+
+- overall risk class,
 - Mission Feasibility Index,
 - stress index,
-- post-mission health,
-- post-mission RUL,
-- RUL margin,
+- current and post-mission RUL bands,
+- conservative RUL/mission ratio,
+- projected profile endurance,
+- mission margin,
+- engineering reserve,
+- decision horizon,
 - subsystem mission risks,
 - dominant risk factors,
-- lower-stress counterfactual profile,
-- independently rescored counterfactual risk.
+- independently rescored lower-stress counterfactual profile.
 
-The old hard-coded mission-success/fuel-burn style values were removed from the command center.
+The Mission Feasibility Index is a transparent **prototype decision-support index**, not a calibrated probability of mission success.
 
-### 11. Evidence-led HMI
+### 11. Fail-safe data validity
 
-The frontend now communicates:
+TwinGuard separates transport connectivity from decision eligibility.
+
+If telemetry becomes stale or data quality falls below the configured threshold, the runtime enters `DATA HOLD` and blocks new Mission Reliability Twin analysis until valid synchronization is restored.
+
+### 12. Evidence-led HMI
+
+The operator interface communicates:
 
 ```text
 Observed state
@@ -235,22 +220,49 @@ Observed state
 → Sensor corroboration
 → Fault hypothesis
 → Subsystem health
-→ RUL
-→ Mission risk
+→ RUL + uncertainty
+→ Mission margin / horizon
 → Counterfactual
 ```
 
-instead of treating a 3D model or unexplained AI percentage as the Digital Twin.
+Hard-coded future mission success/fuel-burn claims were removed.
 
-### 12. Documentation and demo narrative
+### 13. Deployment and security hardening
 
-The README, validation notes, research/design basis and SIH demo flow were rewritten around the actual aero-piston hybrid Digital Twin architecture and truthful validation boundary.
+The demonstrator includes:
+
+- FastAPI REST/WebSocket backend,
+- local authentication and expiring sessions,
+- PBKDF2-SHA256 password hashing,
+- separate telemetry ingest key,
+- explicit CORS/trusted-host controls,
+- production signup disabled by default,
+- Docker Compose health ordering,
+- SQLite local persistence,
+- PostgreSQL/TimescaleDB deployment path,
+- MQTT, CAN/SocketCAN and Unreal integration scaffolds.
+
+---
+
+## Synthetic model pack
+
+Current packaged model artifacts use the `aero-piston-v2` feature/taxonomy contract and are verified for load/execution in CI.
+
+Recorded synthetic proof-of-concept metrics from the synthetic generator/model evaluation include approximately:
+
+- Fault classification accuracy: **0.8909**
+- Fault macro F1: **0.8880**
+- RUL MAE: **10.186 h**
+- RUL RMSE: **12.490 h**
+- RUL R²: **0.6779**
+
+These are **synthetic model-development metrics only** and must not be represented as real-engine accuracy, reliability, or RUL performance.
 
 ---
 
 ## What is genuinely verified
 
-The current repository demonstrates that its synthetic software architecture can operate coherently end to end:
+The repository demonstrates that the software architecture operates coherently end to end with synthetic telemetry:
 
 ```text
 Simulator
@@ -260,79 +272,82 @@ Simulator
 → residuals
 → temporal evidence
 → health / diagnosis
-→ mission analysis
-→ replay
+→ RUL uncertainty
+→ mission reliability analysis
+→ replay / HMI
 ```
 
-The frontend also compiles successfully as a production Vite build.
+The frontend also passes a production TypeScript/Vite build and the backend passes the post-merge automated test/integration pipeline.
 
 ---
 
 ## What is not yet validated
 
-The following remain outside the evidence available in this repository:
+The repository does not currently provide evidence for:
 
-1. Target DRDO/OEM engine-specific calibration.
-2. Real ECU/test-rig telemetry validation.
-3. Real fault-label ground truth.
-4. Real run-to-failure RUL validation.
-5. Calibrated probability of mission completion.
-6. Flight-safety or maintenance certification.
-7. Real-world Sensor Trust false-positive/false-negative characterization.
-8. Environmental-envelope validation across a specific engine's operating limits.
-9. Defence-grade cybersecurity assessment.
-10. Full deployment validation against real CAN/ECU hardware.
-11. Exact proprietary MALE-UAV engine geometry.
+1. target DRDO/OEM engine-specific calibration,
+2. real ECU/test-rig telemetry validation,
+3. real fault-label ground truth,
+4. real run-to-failure RUL validation,
+5. statistically calibrated mission-completion probability,
+6. flight-safety or maintenance certification,
+7. real-world Sensor Trust false-positive/false-negative characterization,
+8. full specific-engine operating-envelope validation,
+9. defence-grade cybersecurity assessment,
+10. deployment against real CAN/ECU hardware,
+11. exact proprietary MALE-UAV engine geometry.
 
 ---
 
 ## Strongest current SIH demonstration
 
-Recommended live story:
-
 ```text
-Healthy engine / mission baseline
+Healthy synchronized engine Twin
         ↓
-Progressive lubrication degradation injected
+Run baseline mission
         ↓
-Oil-pressure residual becomes increasingly negative
-Oil-temperature and vibration provide corroborating evidence
+Record RUL band + mission margin + decision horizon
+        ↓
+Inject progressive lubrication degradation
+        ↓
+Oil-pressure residual worsens
+Oil-temperature/vibration corroborate
         ↓
 Temporal persistence increases
         ↓
-Lubrication health and overall health decline
+Lubrication/overall health decline
         ↓
-Diagnostic condition becomes visible with evidence
+Diagnostic evidence + RUL band change
         ↓
-Simulation-derived RUL decreases
+Run the SAME mission again
         ↓
-Run the SAME mission profile again
+Mission margin / feasibility / horizon worsen
         ↓
-Mission feasibility/risk changes because engine state changed
-        ↓
-TwinGuard independently rescores a lower-stress alternative
+TwinGuard rescores a lower-stress alternative
         ↓
 Replay preserves the evidence chain
 ```
 
-That is the central TwinGuard value proposition: **translate synchronized engine degradation into explainable mission-level reliability intelligence.**
+This directly demonstrates the core TwinGuard value proposition:
+
+> **Given this specific engine condition right now, what does it mean for the mission we are about to fly?**
 
 ---
 
 ## Recommended next validation tier
 
-The next meaningful improvement is not adding more decorative features. It is replacing generic assumptions with engine-specific evidence:
+The next high-value work is not adding decorative features. It is replacing generic assumptions with engine-specific evidence:
 
-1. obtain authorized target-engine signal definitions and units,
-2. obtain healthy ECU/test-rig telemetry across operating conditions,
+1. obtain authorized target-engine signal definitions, units and sampling rates,
+2. obtain healthy ECU/test-rig telemetry across the relevant operating envelope,
 3. calibrate expected-state maps,
-4. validate normal transients separately from faults,
+4. separate normal transients from true degradations,
 5. collect known fault/degradation cases,
-6. build component-specific prognostic ground truth,
-7. calibrate uncertainty and false-alarm behavior,
-8. validate mission-risk rules with propulsion/UAV domain experts,
-9. integrate a real CAN/ECU replay source,
-10. repeat the automated verification suite using those real inputs.
+6. establish component degradation/maintenance ground truth,
+7. validate and calibrate RUL uncertainty,
+8. characterize false alarms and missed detections,
+9. validate mission-risk rules with propulsion/UAV domain experts,
+10. integrate real CAN/ECU replay and repeat the automated verification suite.
 
 Until that tier is complete, the correct status is:
 
