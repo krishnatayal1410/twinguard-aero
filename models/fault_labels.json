@@ -2,9 +2,11 @@
   "normal",
   "lubrication",
   "overheating",
+  "cooling_degradation",
   "vibration",
   "sensor_drift",
   "injector",
   "misfire",
-  "turbine_blade_degradation"
+  "combustion_instability",
+  "alternator_degradation"
 ]

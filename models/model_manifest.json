@@ -1,0 +1,43 @@
+{
+  "schema_version": "aero-piston-v2",
+  "created_at": "2026-09-06T06:03:54.180186+00:00",
+  "fault_labels": [
+    "normal",
+    "lubrication",
+    "overheating",
+    "cooling_degradation",
+    "vibration",
+    "sensor_drift",
+    "injector",
+    "misfire",
+    "combustion_instability",
+    "alternator_degradation"
+  ],
+  "feature_order": [
+    "rpm",
+    "throttle",
+    "cht",
+    "egt",
+    "oil_pressure",
+    "oil_temperature",
+    "fuel_flow",
+    "vibration",
+    "battery_voltage",
+    "alternator_voltage",
+    "injection_timing",
+    "altitude",
+    "ambient_temperature",
+    "cht_residual",
+    "egt_residual",
+    "oil_pressure_residual",
+    "oil_temperature_residual",
+    "fuel_flow_residual",
+    "vibration_residual",
+    "battery_voltage_residual",
+    "alternator_voltage_residual",
+    "injection_timing_residual"
+  ],
+  "training_source": "synthetic_physics_inspired_generator",
+  "validation_scope": "SYNTHETIC_PROOF_OF_CONCEPT",
+  "metrics_file": "synthetic_metrics.json"
+}

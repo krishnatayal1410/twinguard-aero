@@ -7,6 +7,9 @@
   "oil_temperature",
   "fuel_flow",
   "vibration",
+  "battery_voltage",
+  "alternator_voltage",
+  "injection_timing",
   "altitude",
   "ambient_temperature",
   "cht_residual",
@@ -14,5 +17,8 @@
   "oil_pressure_residual",
   "oil_temperature_residual",
   "fuel_flow_residual",
-  "vibration_residual"
+  "vibration_residual",
+  "battery_voltage_residual",
+  "alternator_voltage_residual",
+  "injection_timing_residual"
 ]
