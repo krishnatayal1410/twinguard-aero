@@ -11,10 +11,10 @@ def _env_flag(name: str, default: str) -> bool:
 _RUNTIME_ENV = os.getenv("TWINGUARD_ENV", "development").strip().lower()
 
 
-@dataclass(frozen=True)
+@dataclass
 class Settings:
     app_name: str = "TwinGuard Aero"
-    version: str = "3.0.0"
+    version: str = "3.1.0"
     environment: str = _RUNTIME_ENV
     engine_id: str = os.getenv("TWINGUARD_ENGINE_ID", "ENGINE-01")
     database_url: str = os.getenv("DATABASE_URL", "sqlite:///./data/runtime/twinguard.db")
@@ -32,10 +32,11 @@ class Settings:
     max_body_bytes: int = int(os.getenv("MAX_BODY_BYTES", "131072"))
     model_dir: str = os.getenv("MODEL_DIR", "./models")
 
-    # Local SIH/demo mode keeps account creation convenient. Production mode
-    # disables new signup unless an operator explicitly opts in.
     allow_signup: bool = _env_flag("ALLOW_SIGNUP", "0" if _RUNTIME_ENV == "production" else "1")
 
+    # These two decision-support guard values are intentionally mutable through
+    # an authenticated runtime endpoint in the SIH demonstrator. They reset to
+    # environment defaults whenever the backend restarts.
     telemetry_stale_seconds: float = float(os.getenv("TELEMETRY_STALE_SECONDS", "8"))
     mission_min_data_quality: float = float(os.getenv("MISSION_MIN_DATA_QUALITY", "70"))
 
