@@ -2,7 +2,7 @@ import type{ReactNode}from"react";
 import{Plane,Activity}from"lucide-react";
 import{fmt}from"./ui";
 
-export function PageHeader({title,subtitle}:{title:string;subtitle:string}){return <div className="ref-page-head"><div><h1>{title}</h1><p>{subtitle}</p></div><div className="ref-asset-chip"><Plane size={27}/><strong>TG-01</strong><span><b>MALE-class UAV</b> · Prototype 1<small>Medium-altitude long-endurance platform</small></span></div></div>}
+export function PageHeader({title,subtitle}:{title:string;subtitle:string}){return <div className="ref-page-head"><div><h1>{title}</h1><p>{subtitle}</p></div><div className="ref-asset-chip"><Plane size={27}/><strong>ENGINE-01</strong><span><b>MALE-class UAV</b> · Prototype 1<small>Medium-altitude long-endurance platform</small></span></div></div>}
 export function Panel({children,className=""}:{children:ReactNode;className?:string}){return <section className={`ref-panel ${className}`}>{children}</section>}
 export function PanelTitle({icon,title,subtitle,right}:{icon?:ReactNode;title:string;subtitle?:string;right?:ReactNode}){return <div className="ref-panel-title"><div className="ref-panel-title-main">{icon}<div><h3>{title}</h3>{subtitle&&<p>{subtitle}</p>}</div></div>{right}</div>}
 export function Ring({value,label,delta,detail}:{value:number;label:string;delta?:string;detail?:string}){const v=Math.max(0,Math.min(100,value));return <div className="ref-ring-wrap"><div className="ref-ring" style={{background:`conic-gradient(${v<70?"#ff3b30":v<86?"#18a0fb":"#08b85c"} ${v*3.6}deg,#e4eef7 0)`}}><div><b>{Math.round(v)}%</b>{delta&&<em>{delta}</em>}</div></div><span>{label}</span>{detail&&<small className="ring-detail">{detail}</small>}</div>}
