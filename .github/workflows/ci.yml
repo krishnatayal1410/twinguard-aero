@@ -33,6 +33,34 @@ jobs:
         run: |
           mkdir -p data/runtime
           pytest -q backend/tests
+      - name: Verify packaged native ML artifacts
+        env:
+          PYTHONPATH: ${{ github.workspace }}/backend
+          MODEL_DIR: ${{ github.workspace }}/models
+          TWINGUARD_NATIVE_ML: '1'
+        run: |
+          python - <<'PY'
+          from app.services.ai_engine import AIEngine
+          from app.services.physics import PhysicsEngine
+
+          telemetry = {
+              'rpm': 4100, 'throttle': 70, 'cht': 181, 'egt': 702,
+              'oil_pressure': 4.47, 'oil_temperature': 108, 'fuel_flow': 20.6,
+              'vibration': .23, 'battery_voltage': 27.85, 'alternator_voltage': 28.15,
+              'injection_timing': 18.8, 'altitude': 4300, 'ambient_temperature': 25,
+              'operating_hours': 42,
+          }
+          physics = PhysicsEngine()
+          expected = physics.expected(telemetry)
+          residuals = physics.residuals(telemetry, expected)
+          ai = AIEngine('models')
+          result = ai.predict(telemetry, residuals, {})
+          assert ai.fault is not None, 'fault classifier did not load'
+          assert ai.rul is not None, 'RUL regressor did not load'
+          assert result['model_state'] == 'NATIVE_ML'
+          assert result['rul_interval_hours']['lower'] <= result['rul_hours'] <= result['rul_interval_hours']['upper']
+          print('Native synthetic ML pack verified:', result['probable_fault'], result['rul_hours'])
+          PY
 
   integration:
     needs: backend
