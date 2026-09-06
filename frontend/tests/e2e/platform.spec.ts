@@ -47,7 +47,7 @@ test("simulator controls and exports are actionable",async({page})=>{
  await page.getByRole("button",{name:"Simulator",exact:true}).click();
  await page.locator("select").first().selectOption("lubrication");
  await page.getByRole("button",{name:"Apply Scenario"}).click();
- await expect(page.getByText(/Lubrication Degradation applied/i)).toBeVisible();
+ await expect(page.getByText(/Lubrication applied at/i)).toBeVisible();
  await page.getByRole("button",{name:"Data Management",exact:true}).click();
  await expect(page.getByRole("button",{name:/Export Telemetry/})).toBeEnabled();
  await expect(page.getByRole("button",{name:/Export Full Twin State/})).toBeEnabled();
