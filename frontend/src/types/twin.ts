@@ -11,6 +11,7 @@ export type FaultName=
   |"alternator_degradation";
 
 export type ViewName="command"|"diagnostics"|"mission"|"replay"|"maintenance"|"settings";
+export type MissionType="endurance"|"high_altitude"|"hot_weather"|"rapid_throttle"|"patrol";
 
 export interface RulInterval{
   lower:number;
@@ -93,6 +94,9 @@ export interface TwinState{
 }
 
 export interface MissionResult{
+  mission_type?:MissionType;
+  profile_modifier_description?:string;
+  profile_modifiers?:Record<string,number>;
   overall_risk:string;
   decision:string;
   stress_index:number;
