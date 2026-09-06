@@ -1,7 +1,7 @@
 import axios from"axios";
-import type{FaultName,MissionResult,ReplayMission,RuntimeValidity,SystemStatus,TwinState}from"../types/twin";
+import type{FaultName,MissionResult,ReplayMission,ReplaySample,RuntimeValidity,SystemStatus,TwinState}from"../types/twin";
 import{storedToken}from"./authApi";
-import{buildDemoTwin,demoAnalyzeMission,demoEndReplay,demoGetReplay,demoListReplay,demoStartReplay,demoSystemStatus,isHostedDemo,resetDemoFault,setDemoFault}from"../demo/demoRuntime";
+import{buildDemoTwin,demoAnalyzeMission,demoEndReplay,demoGetReplay,demoGetReplaySamples,demoListReplay,demoStartReplay,demoSystemStatus,isHostedDemo,resetDemoFault,setDemoFault}from"../demo/demoRuntime";
 
 export const http=axios.create({baseURL:"/api/v1",timeout:5000,headers:{"X-Requested-With":"TwinGuard-Aero"}});
 http.interceptors.request.use(c=>{const t=storedToken();if(t)c.headers.Authorization=`Bearer ${t}`;return c});
@@ -14,6 +14,7 @@ export const startReplay=async(label?:string)=>isHostedDemo()?demoStartReplay(la
 export const endReplay=async()=>isHostedDemo()?demoEndReplay():(await http.post<ReplayMission>("/replay/end")).data;
 export const listReplay=async()=>isHostedDemo()?demoListReplay():(await http.get<ReplayMission[]>("/replay/missions")).data;
 export const getReplay=async(id:number)=>isHostedDemo()?demoGetReplay(id):(await http.get<ReplayMission>(`/replay/missions/${id}`)).data;
+export const getReplaySamples=async(id:number)=>isHostedDemo()?demoGetReplaySamples(id):(await http.get<ReplaySample[]>(`/replay/missions/${id}/samples`)).data;
 export const getSystemStatus=async()=>isHostedDemo()?demoSystemStatus():(await http.get<SystemStatus>("/system/status")).data;
 
 export function connectTwin(onState:(s:TwinState)=>void,onStatus:(online:boolean)=>void,onValidity?:(v:RuntimeValidity)=>void){
@@ -22,6 +23,6 @@ export function connectTwin(onState:(s:TwinState)=>void,onStatus:(online:boolean
  }
  const proto=location.protocol==="https:"?"wss":"ws",host=location.port==="5173"?`${location.hostname}:8000`:location.host;
  let ws:WebSocket|undefined,stopped=false,retry=900;
- const open=()=>{const token=storedToken();if(!token){onStatus(false);return}ws=new WebSocket(`${proto}://${host}/api/v1/ws/twin/ENGINE-01?token=${encodeURIComponent(token)}`);ws.onopen=()=>{retry=900;onStatus(true)};ws.onmessage=e=>{try{const x=JSON.parse(e.data);if(x?.telemetry){onState(x);if(x.runtime_validity)onValidity?.(x.runtime_validity)}else if(x?.runtime_validity)onValidity?.(x.runtime_validity)}catch{}};ws.onclose=()=>{onStatus(false);if(!stopped){setTimeout(open,retry);retry=Math.min(6000,retry*1.5)}};ws.onerror=()=>ws?.close()};
+ const open=()=>{const token=storedToken();if(!token){onStatus(false);return}ws=new WebSocket(`${proto}://${host}/api/v1/ws/twin/ENGINE-01?token=${encodeURIComponent(token)}`);ws.onopen=()=>{retry=900;onStatus(true)};ws.onmessage=e=>{try{const x=JSON.parse(e.data);if(x?.telemetry){onState(x as TwinState);if(x.runtime_validity)onValidity?.(x.runtime_validity)}else if(x?.runtime_validity)onValidity?.(x.runtime_validity)}catch{}};ws.onclose=()=>{onStatus(false);if(!stopped){setTimeout(open,retry);retry=Math.min(6000,retry*1.5)}};ws.onerror=()=>ws?.close()};
  open();return()=>{stopped=true;ws?.close()};
 }
