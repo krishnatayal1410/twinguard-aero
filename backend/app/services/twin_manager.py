@@ -1,4 +1,6 @@
 from __future__ import annotations
+from collections import deque
+from datetime import datetime
 from threading import RLock
 
 from .ai_engine import AIEngine
@@ -25,6 +27,8 @@ class TwinManager:
         self.previous = None
         self.state = None
         self.simulation = {"fault": "normal", "severity": 0.0}
+        self.history = deque(maxlen=120)
+        self.anomaly_streak = 0
 
     @staticmethod
     def _physics_confidence(residuals: dict, anomaly: bool) -> float:
@@ -38,14 +42,65 @@ class TwinManager:
             abs(residuals.get("alternator_voltage_residual", 0)) / 2.5,
         ]
         if anomaly:
-            # During a real fault we WANT several physically related channels
-            # to disagree with the healthy model. Corroboration therefore
-            # increases confidence instead of decreasing it.
             corroborating = sum(1 for value in normalized if value >= .35)
             strongest = max(normalized) if normalized else 0
             return max(45.0, min(100.0, 52 + 9 * corroborating + 16 * min(1.0, strongest)))
         mean = sum(normalized) / max(1, len(normalized))
         return max(45.0, min(100.0, 100 - mean * 38))
+
+    @staticmethod
+    def _seconds(timestamp) -> float | None:
+        try:
+            if isinstance(timestamp, str):
+                timestamp = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+            return timestamp.timestamp()
+        except Exception:
+            return None
+
+    def _trend(self, current: dict, key: str, section: str = "telemetry", window: int = 12) -> float:
+        points = []
+        for item in list(self.history)[-(window - 1):]:
+            source = item.get(section, {})
+            if key in source:
+                ts = self._seconds(item.get("timestamp"))
+                if ts is not None:
+                    points.append((ts, float(source[key])))
+        current_source = current if section == "telemetry" else current.get(section, {})
+        if key in current_source:
+            ts = self._seconds(current.get("timestamp")) if section != "telemetry" else self._seconds(current.get("timestamp"))
+            if ts is not None:
+                points.append((ts, float(current_source[key])))
+        if len(points) < 2:
+            return 0.0
+        dt = points[-1][0] - points[0][0]
+        if dt <= 0:
+            return 0.0
+        return (points[-1][1] - points[0][1]) / dt * 60.0
+
+    def _telemetry_trends(self, t: dict) -> dict:
+        return {
+            "oil_pressure_per_min": self._trend(t, "oil_pressure"),
+            "oil_temperature_per_min": self._trend(t, "oil_temperature"),
+            "cht_per_min": self._trend(t, "cht"),
+            "egt_per_min": self._trend(t, "egt"),
+            "vibration_per_min": self._trend(t, "vibration"),
+            "battery_voltage_per_min": self._trend(t, "battery_voltage"),
+            "alternator_voltage_per_min": self._trend(t, "alternator_voltage"),
+        }
+
+    def _health_trend(self, t: dict, health: dict) -> float:
+        points = []
+        for item in list(self.history)[-11:]:
+            if "overall" in item.get("health", {}):
+                ts = self._seconds(item.get("timestamp"))
+                if ts is not None:
+                    points.append((ts, float(item["health"]["overall"])))
+        ts = self._seconds(t.get("timestamp"))
+        if ts is not None:
+            points.append((ts, float(health["overall"])))
+        if len(points) < 2 or points[-1][0] <= points[0][0]:
+            return 0.0
+        return (points[-1][1] - points[0][1]) / (points[-1][0] - points[0][0]) * 60.0
 
     def ingest(self, telemetry: dict):
         with self.lock:
@@ -56,21 +111,28 @@ class TwinManager:
 
             expected = self.physics.expected(t)
             residuals = self.physics.residuals(t, expected)
+            trends = self._telemetry_trends(t)
             trust = self.trust.evaluate(t, residuals, self.previous)
             quality = self.trust.quality(t, trust)
             health = self.health.compute(t, residuals, trust)
-            ai = self.ai.predict(t, residuals)
+            trends["health_index_per_min"] = self._health_trend(t, health)
+            ai = self.ai.predict(t, residuals, trends)
+
+            self.anomaly_streak = self.anomaly_streak + 1 if ai["anomaly"] else 0
+            ai["anomaly_persistence_samples"] = self.anomaly_streak
 
             ai_conf = ai["fault_confidence"] * 100
             sensor_conf = sum(trust.values()) / max(1, len(trust))
             physics_conf = self._physics_confidence(residuals, bool(ai["anomaly"]))
             data_conf = float(quality["overall"])
-            fused = .40 * ai_conf + .27 * sensor_conf + .23 * physics_conf + .10 * data_conf
+            persistence_conf = min(100.0, 35.0 + self.anomaly_streak * 8.0) if ai["anomaly"] else 100.0
+            fused = .34 * ai_conf + .23 * sensor_conf + .20 * physics_conf + .10 * data_conf + .13 * persistence_conf
             confidence = {
                 "ai": ai_conf,
                 "sensor": sensor_conf,
                 "physics_agreement": physics_conf,
                 "data_quality": data_conf,
+                "temporal_persistence": persistence_conf,
                 "decision": max(0.0, min(100.0, fused)),
             }
 
@@ -82,6 +144,7 @@ class TwinManager:
                 "telemetry": t,
                 "expected": expected,
                 "residuals": residuals,
+                "trends": trends,
                 "sensor_trust": trust,
                 "data_quality": quality,
                 "health": health,
@@ -96,6 +159,7 @@ class TwinManager:
                 },
             }
             self.previous = t
+            self.history.append({"timestamp": t["timestamp"], "telemetry": t, "health": health, "ai": ai})
             self.replay.sample(self.state)
             persistence.save(self.state)
             return self.state
