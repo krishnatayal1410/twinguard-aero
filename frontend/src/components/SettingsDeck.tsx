@@ -12,6 +12,7 @@ export default function SettingsDeck(){
  const[status,setStatus]=useState<SystemStatus>();
  const user=useAuthStore(s=>s.user),token=useAuthStore(s=>s.token),clear=useAuthStore(s=>s.clear);
  const twin=useTwinStore(s=>s.twin),runtimeValidity=useTwinStore(s=>s.runtimeValidity);
+ const telemetryAge=runtimeValidity?.telemetry_age_seconds;
  const load=()=>getSystemStatus().then(setStatus).catch(()=>setStatus(undefined));
  useEffect(()=>{void load()},[]);
  const items=[["Database",status?.database,Database],["MQTT",status?.integrations.mqtt?"Enabled":"Local / disabled",Radio],["CAN / SocketCAN",status?.integrations.can?"Enabled":"Adapter ready",Usb],["Unreal UDP",status?.integrations.unreal_udp?"Enabled":"Adapter ready",Gamepad2]]as const;
@@ -24,7 +25,7 @@ export default function SettingsDeck(){
   ["Validation scope",pretty(twin?.ai.validation_scope??"synthetic proof of concept")],
  ] as const;
  return <motion.div className="settings-page" initial={{opacity:0,y:8}} animate={{opacity:1,y:0}}>
-  <Card className="settings-hero"><SectionTitle eyebrow="SYSTEM INTEGRATION" title="TwinGuard platform status" action={<button className="icon-button" onClick={load}><RefreshCcw size={15}/></button>}/><div className="system-status-grid">{items.map(([n,v,Icon])=><div key={n}><Icon size={24}/><span>{n}</span><strong>{v??"Waiting…"}</strong><CheckCircle2 size={15}/></div>)}</div><p className="fineprint">Decision data gate: {runtimeValidity?.decision_eligible===false?"HOLD":"eligible"} · telemetry age {runtimeValidity?.telemetry_age_seconds==null?"--":`${runtimeValidity.telemetry_age_seconds.toFixed(1)} s`}.</p></Card>
+  <Card className="settings-hero"><SectionTitle eyebrow="SYSTEM INTEGRATION" title="TwinGuard platform status" action={<button className="icon-button" onClick={load}><RefreshCcw size={15}/></button>}/><div className="system-status-grid">{items.map(([n,v,Icon])=><div key={n}><Icon size={24}/><span>{n}</span><strong>{v??"Waiting…"}</strong><CheckCircle2 size={15}/></div>)}</div><p className="fineprint">Decision data gate: {runtimeValidity?.decision_eligible===false?"HOLD":"eligible"} · telemetry age {telemetryAge==null?"--":`${telemetryAge.toFixed(1)} s`}.</p></Card>
   <div className="settings-grid">
    <Card><SectionTitle eyebrow="OPERATOR ACCOUNT" title="Signed-in identity"/><div className="account-settings-card"><UserRound/><div><strong>{user?.name}</strong><span>{user?.email}</span><Badge kind="blue">{pretty(user?.role??"operator")}</Badge></div><button onClick={async()=>{await signOut(token);clear()}}><LogOut size={14}/>Sign out</button></div></Card>
    <Card><SectionTitle eyebrow="DIAGNOSTIC / PROGNOSTIC RUNTIME" title="Active computation path"/><div className="status-list">{modelItems.map(([k,v])=><div key={k}><span>{k}</span><Badge kind={String(v).toLowerCase().includes("fallback")||String(v).toLowerCase().includes("surrogate")?"warn":"good"}>{v}</Badge></div>)}</div>{twin?.ai.model_warning&&<p className="fineprint">{twin.ai.model_warning}</p>}<p className="fineprint">Compatible synthetic native models are verified separately in CI; the live runtime only claims them active when `TWINGUARD_NATIVE_ML=1` and the artifact contract matches.</p></Card>
