@@ -29,10 +29,11 @@ const replayEvents:Array<{label:string;variant:MissionVariant;time:string}>=[
 ];
 
 export default function CommandCenter(){
- const twin=useTwinStore(s=>s.twin),history=useTwinStore(s=>s.history),missionRuns=useTwinStore(s=>s.missionRuns),setView=useTwinStore(s=>s.setView),setFocus=useTwinStore(s=>s.setFocus);
+ const twin=useTwinStore(s=>s.twin),runtimeValidity=useTwinStore(s=>s.runtimeValidity),history=useTwinStore(s=>s.history),missionRuns=useTwinStore(s=>s.missionRuns),setView=useTwinStore(s=>s.setView),setFocus=useTwinStore(s=>s.setFocus);
  const[explode,setExplode]=useState(true),[xray,setXray]=useState(false),[rotate,setRotate]=useState(false),[zoom,setZoom]=useState(1),[resetToken,setResetToken]=useState(0);
  const[fault,setFaultName]=useState<FaultName>("normal"),[severity,setSeverity]=useState(50),[playing,setPlaying]=useState(false),[replayProgress,setReplayProgress]=useState(48),[selectedEvent,setSelectedEvent]=useState(2);
  const health=twin?.health.overall??94,faultName=twin?.ai.probable_fault??"normal",evidence=twin?.ai.evidence??[],ready=twin?.readiness.label??"READY";
+ const decisionEligible=runtimeValidity?.decision_eligible!==false,displayReady=decisionEligible?ready:"DATA HOLD",conservativeRul=twin?.ai.rul_interval_hours?.lower;
  const latestMission=missionRuns.length?missionRuns[missionRuns.length-1].result:undefined;
  const metrics=useMemo(()=>defs.map(([key,label,unit,d,Icon])=>({key,label,unit,d,Icon,value:Number(twin?.telemetry[key]??0),hist:history[key]??[]})),[twin,history]);
  useEffect(()=>{if(!playing)return;const id=window.setInterval(()=>setReplayProgress(v=>v>=100?0:v+1),300);return()=>window.clearInterval(id)},[playing]);
@@ -46,7 +47,7 @@ export default function CommandCenter(){
   <div className="reference-top">
    <Card className="exact-engine-card">
     <div className="engine-card-heading">
-     <SectionTitle eyebrow="DIGITAL TWIN  •  ENGINE-01" title="Aero-Piston Engine Digital Twin" action={<Badge kind="blue"><Activity size={12}/>Live</Badge>}/>
+     <SectionTitle eyebrow="DIGITAL TWIN  •  ENGINE-01" title="Aero-Piston Engine Digital Twin" action={<Badge kind={decisionEligible?"blue":"warn"}><Activity size={12}/>{decisionEligible?"Live":"Data Hold"}</Badge>}/>
      <div className="overall-health-mini"><ShieldCheck/><div><span>Engineering Health Index</span><strong>{pct(health)}</strong><small>{health>=94?"Nominal":health>=85?"Monitor":"Review"}</small></div><b>⋮</b></div>
     </div>
     <div id="engine-reference-stage" className="engine-reference-stage true-3d-engine">
@@ -76,8 +77,8 @@ export default function CommandCenter(){
 
    <Card className="exact-decision-card">
     <SectionTitle eyebrow="DECISION SUPPORT" title="" action={synthetic?<Badge kind="blue">Synthetic POC</Badge>:<button className="dots">⋮</button>}/>
-    <div className="decision-heading"><div><strong>{ready==="READY"?"Mission Release: Ready":pretty(ready)}</strong><span>{twin?.readiness.reason??"Waiting for synchronized twin state"}</span></div><div className="decision-shield"><ShieldCheck/></div></div>
-    <div className="decision-stats"><div><span>Simulation-derived RUL</span><b>{fmt(twin?.ai.rul_hours,1)} h</b></div><div><span>Diagnostic Confidence</span><Badge kind="good">{(twin?.confidence.decision??92)>84?"High":"Review"}</Badge><b>{pct(twin?.confidence.decision)}</b></div></div>
+    <div className="decision-heading"><div><strong>{displayReady==="READY"?"Mission Release: Ready":pretty(displayReady)}</strong><span>{decisionEligible?(twin?.readiness.reason??"Waiting for synchronized twin state"):`Telemetry is not currently decision-eligible. Last state age ${fmt(runtimeValidity?.telemetry_age_seconds,1)} s.`}</span></div><div className="decision-shield"><ShieldCheck/></div></div>
+    <div className="decision-stats"><div><span>RUL Estimate</span><b>{fmt(twin?.ai.rul_hours,1)} h</b></div><div><span>Conservative RUL</span><b>{fmt(conservativeRul,1)} h</b></div><div><span>Diagnostic Confidence</span><Badge kind={(twin?.confidence.decision??0)>84?"good":"warn"}>{(twin?.confidence.decision??0)>84?"High":"Review"}</Badge><b>{pct(twin?.confidence.decision)}</b></div></div>
     <div className="decision-maintenance"><span>Maintenance Assessment</span><strong>{twin?.maintenance.priority==="MONITOR"?"Monitor / Trend":pretty(twin?.maintenance.priority)}</strong><p>{twin?.maintenance.reason??"Awaiting telemetry."}</p></div>
     <button className="view-ai-report" onClick={()=>setView("diagnostics")}><Zap size={13}/>View Evidence Report</button>
    </Card>
@@ -91,8 +92,8 @@ export default function CommandCenter(){
      <Card className="exact-mission-card">
       <SectionTitle eyebrow="MISSION RELIABILITY TWIN" title="Latest mission analysis" action={latestMission?<Badge kind={latestMission.overall_risk==="LOW"?"good":latestMission.overall_risk==="MEDIUM"?"warn":"bad"}>{latestMission.overall_risk}</Badge>:undefined}/>
       <div className="mission-reference-content">
-       <div className="mission-input-panel"><strong>Current Twin Inputs</strong>{[["Health index",pct(twin?.health.overall)],["RUL basis",pretty(twin?.ai.rul_basis??"engineering_surrogate")],["Active condition",twin?.ai.anomaly?pretty(faultName):"Normal"],["Validation","Synthetic POC"]].map(x=><div key={x[0]}><span>{x[0]}</span><b>{x[1]}</b></div>)}</div>
-       <div className="future-simulation"><strong>{latestMission?"Backend Mission Result":"Mission analysis not run yet"}</strong>{latestMission?<><div className="future-stat-row"><div><span>Mission Risk</span><b>{latestMission.overall_risk}</b></div><div><span>Post-Mission Health</span><b>{pct(latestMission.post_mission_health)}</b></div><div><span>Post-Mission RUL</span><b>{fmt(latestMission.post_mission_rul_hours,1)} h</b></div><div><span>Stress Index</span><b>{fmt(latestMission.stress_index,2)}</b></div></div><div className="key-trends"><span>Decision</span><p>{pretty(latestMission.decision)}</p><small>{latestMission.explanation}</small></div></>:<div className="empty-state"><strong>No fabricated prediction shown</strong><p>Open Mission Lab and run a profile. This panel will display only backend-generated results.</p></div>}<button onClick={()=>setView("mission")}>{latestMission?"Open Full Mission Analysis":"Configure Mission"}</button></div>
+       <div className="mission-input-panel"><strong>Current Twin Inputs</strong>{[["Health index",pct(twin?.health.overall)],["Conservative RUL",`${fmt(conservativeRul,1)} h`],["RUL basis",pretty(twin?.ai.rul_basis??"engineering_surrogate")],["Active condition",twin?.ai.anomaly?pretty(faultName):"Normal"],["Data gate",decisionEligible?"Decision eligible":"DATA HOLD"],["Validation","Synthetic POC"]].map(x=><div key={x[0]}><span>{x[0]}</span><b>{x[1]}</b></div>)}</div>
+       <div className="future-simulation"><strong>{latestMission?"Backend Mission Result":"Mission analysis not run yet"}</strong>{latestMission?<><div className="future-stat-row"><div><span>Mission Risk</span><b>{latestMission.overall_risk}</b></div><div><span>Feasibility</span><b>{fmt(latestMission.mission_feasibility_index,0)}/100</b></div><div><span>Mission Margin</span><b>{fmt(latestMission.mission_margin_hours,1)} h</b></div><div><span>Decision Horizon</span><b>{fmt(latestMission.decision_horizon_hours,1)} h</b></div></div><div className="key-trends"><span>Decision</span><p>{pretty(latestMission.decision)}</p><small>{latestMission.explanation}</small></div></>:<div className="empty-state"><strong>No fabricated prediction shown</strong><p>Open Mission Lab and run a profile. This panel will display only backend-generated results.</p></div>}<button onClick={()=>setView("mission")}>{latestMission?"Open Full Mission Analysis":"Configure Mission"}</button></div>
       </div>
      </Card>
 
