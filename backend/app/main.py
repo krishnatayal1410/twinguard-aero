@@ -113,14 +113,6 @@ def require_simulation_reader(
     authorization: str | None = Header(default=None),
     x_twinguard_ingest_key: str | None = Header(default=None),
 ):
-    """Allow the operator UI or the local simulator to read fault configuration.
-
-    Fault mutation remains operator-authenticated. The simulator only needs
-    read access and authenticates with the same ingest key it already uses for
-    telemetry submission. This fixes the previous state where the simulator's
-    config request was always rejected and silently fell back to `normal`.
-    """
-
     if session_user(_bearer(authorization)):
         return True
     if not settings.ingest_api_key:
@@ -128,6 +120,48 @@ def require_simulation_reader(
     if hmac.compare_digest(x_twinguard_ingest_key or "", settings.ingest_api_key):
         return True
     raise HTTPException(401, "Simulation configuration authentication required")
+
+
+def _state_age_seconds(state: dict | None) -> float | None:
+    if not state:
+        return None
+    try:
+        ts = datetime.fromisoformat(str(state["timestamp"]).replace("Z", "+00:00"))
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        return max(0.0, (datetime.now(timezone.utc) - ts).total_seconds())
+    except Exception:
+        return None
+
+
+def _runtime_snapshot(state: dict) -> dict:
+    age = _state_age_seconds(state)
+    quality = float(state.get("data_quality", {}).get("overall", 0.0))
+    stale = age is None or age > settings.telemetry_stale_seconds
+    quality_ok = quality >= settings.mission_min_data_quality
+    decision_eligible = not stale and quality_ok
+    snapshot = dict(state)
+    snapshot["runtime_validity"] = {
+        "telemetry_age_seconds": age,
+        "stale": stale,
+        "freshness_limit_seconds": settings.telemetry_stale_seconds,
+        "data_quality": quality,
+        "minimum_data_quality": settings.mission_min_data_quality,
+        "decision_eligible": decision_eligible,
+    }
+    if stale:
+        snapshot["readiness"] = {
+            "status": "DATA_HOLD",
+            "label": "DATA HOLD",
+            "reason": f"Latest telemetry is stale for mission decision support ({age:.1f}s old; limit {settings.telemetry_stale_seconds:.1f}s). Restore live synchronization before release assessment." if age is not None else "Telemetry timestamp is invalid; restore live synchronization before release assessment.",
+        }
+    elif not quality_ok:
+        snapshot["readiness"] = {
+            "status": "DATA_HOLD",
+            "label": "DATA HOLD",
+            "reason": f"Data-quality score {quality:.1f} is below the mission-analysis threshold {settings.mission_min_data_quality:.1f}.",
+        }
+    return snapshot
 
 
 @app.post("/api/v1/auth/signup")
@@ -177,7 +211,7 @@ def current(engine_id: str):
         raise HTTPException(404, "Engine not found")
     if not state:
         raise HTTPException(404, "No telemetry received yet")
-    return state
+    return _runtime_snapshot(state)
 
 
 @app.get("/api/v1/twin/{engine_id}")
@@ -188,7 +222,7 @@ def twin(engine_id: str, user=Depends(require_user)):
 @app.get("/api/v1/diagnostics/{engine_id}")
 def diagnostics(engine_id: str, user=Depends(require_user)):
     state = current(engine_id)
-    return {k: state[k] for k in ("ai", "residuals", "sensor_trust", "data_quality", "health", "confidence")}
+    return {k: state[k] for k in ("ai", "residuals", "trends", "sensor_trust", "data_quality", "health", "confidence", "runtime_validity")}
 
 
 @app.get("/api/v1/diagnostics/{engine_id}/explain")
@@ -200,14 +234,23 @@ def explain(engine_id: str, user=Depends(require_user)):
 @app.get("/api/v1/maintenance/{engine_id}")
 def maintenance(engine_id: str, user=Depends(require_user)):
     state = current(engine_id)
-    return {"maintenance": state["maintenance"], "readiness": state["readiness"], "rul_hours": state["ai"]["rul_hours"]}
+    return {
+        "maintenance": state["maintenance"],
+        "readiness": state["readiness"],
+        "rul_hours": state["ai"]["rul_hours"],
+        "rul_interval_hours": state["ai"].get("rul_interval_hours"),
+        "runtime_validity": state["runtime_validity"],
+    }
 
 
 @app.post("/api/v1/mission/analyze")
 def mission(req: MissionRequest, user=Depends(require_user)):
-    state = manager.get()
-    if not state:
-        raise HTTPException(409, "Twin has no current telemetry")
+    state = current(settings.engine_id)
+    validity = state["runtime_validity"]
+    if validity["stale"]:
+        raise HTTPException(409, "Mission analysis blocked: latest telemetry is stale. Restore live telemetry synchronization and retry.")
+    if not validity["decision_eligible"]:
+        raise HTTPException(409, "Mission analysis blocked: current data quality is below the configured decision threshold.")
     return manager.mission.analyze(state, req)
 
 
@@ -235,10 +278,10 @@ def replay_start(req: ReplayStart, user=Depends(require_user)):
 
 @app.post("/api/v1/replay/end")
 def replay_end(user=Depends(require_user)):
-    mission = manager.replay.end()
-    if not mission:
+    mission_record = manager.replay.end()
+    if not mission_record:
         raise HTTPException(409, "No active mission recording")
-    return mission
+    return mission_record
 
 
 @app.get("/api/v1/replay/missions")
@@ -248,21 +291,19 @@ def replay_list(limit: int = 30, user=Depends(require_user)):
 
 @app.get("/api/v1/replay/missions/{mission_id}")
 def replay_get(mission_id: int, user=Depends(require_user)):
-    mission = manager.replay.get(mission_id)
-    if not mission:
+    mission_record = manager.replay.get(mission_id)
+    if not mission_record:
         raise HTTPException(404, "Mission not found")
-    return mission
+    return mission_record
 
 
 @app.get("/api/v1/system/status")
 def system_status(user=Depends(require_user)):
     state = manager.get()
-    age = None
-    if state:
-        try:
-            age = max(0, (datetime.now(timezone.utc) - datetime.fromisoformat(str(state["timestamp"]).replace("Z", "+00:00"))).total_seconds())
-        except Exception:
-            pass
+    age = _state_age_seconds(state)
+    stale = age is None or age > settings.telemetry_stale_seconds if state else True
+    quality = float(state.get("data_quality", {}).get("overall", 0.0)) if state else 0.0
+    decision_eligible = bool(state) and not stale and quality >= settings.mission_min_data_quality
     return {
         "service": settings.app_name,
         "version": settings.version,
@@ -271,7 +312,15 @@ def system_status(user=Depends(require_user)):
         "database": settings.database_url.split(":", 1)[0],
         "models": {"anomaly": manager.ai.anomaly is not None, "fault": manager.ai.fault is not None, "rul": manager.ai.rul is not None},
         "integrations": {"mqtt": settings.mqtt_enabled, "unreal_udp": settings.unreal_udp_enabled, "can": settings.can_enabled},
-        "telemetry": {"available": bool(state), "age_seconds": age},
+        "telemetry": {
+            "available": bool(state),
+            "age_seconds": age,
+            "stale": stale,
+            "freshness_limit_seconds": settings.telemetry_stale_seconds,
+            "data_quality": quality,
+            "minimum_data_quality": settings.mission_min_data_quality,
+            "decision_eligible": decision_eligible,
+        },
         "security": {
             "cors_origins": list(settings.cors_origins),
             "trusted_hosts": list(settings.trusted_hosts),
@@ -291,10 +340,17 @@ async def twin_ws(ws: WebSocket, engine_id: str):
     clients.add(ws)
     try:
         if manager.get():
-            await ws.send_json(manager.get())
+            await ws.send_json(_runtime_snapshot(manager.get()))
         while True:
-            await asyncio.sleep(20)
-            await ws.send_json({"type": "heartbeat", "timestamp": datetime.now(timezone.utc).isoformat()})
+            await asyncio.sleep(5)
+            state = manager.get()
+            await ws.send_json(
+                {
+                    "type": "heartbeat",
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "runtime_validity": _runtime_snapshot(state)["runtime_validity"] if state else {"decision_eligible": False, "stale": True},
+                }
+            )
     except WebSocketDisconnect:
         pass
     finally:
