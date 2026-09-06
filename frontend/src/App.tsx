@@ -6,6 +6,7 @@ import{useAuthStore}from"./store/authStore";
 import type{ViewName}from"./types/twin";
 import ErrorBoundary from"./components/ErrorBoundary";
 import"./styles/reference.css";
+import"./styles/functional.css";
 
 const CommandCenter=lazy(()=>import("./components/CommandCenter"));
 const DigitalTwinDeck=lazy(()=>import("./components/DigitalTwinDeck"));
@@ -26,7 +27,7 @@ export default function App(){
  return <div className="tg-shell">
   <aside className="tg-sidebar">
    <div className="tg-brand"><img src="/assets/twinguard-mark.svg"/><div><strong>TwinGuard AI</strong><small>Mission Reliability. Assured.</small></div></div>
-   <nav>{nav.map(([id,label,Icon])=><button key={id} className={view===id?"active":""} onClick={()=>setView(id)}><Icon size={21}/><span>{label}</span></button>)}</nav>
+   <nav>{nav.map(([id,label,Icon])=><button key={id} className={view===id?"active":""} onClick={()=>setView(id)} title={label}><Icon size={21}/><span>{label}</span></button>)}</nav>
    <div className="tg-sidebar-art"><div className="tg-plane">✈</div><div className="mountain m1"/><div className="mountain m2"/><div className="mountain m3"/></div>
    <div className="tg-sidebar-foot"><b>BUILT FOR<br/>SAFER SKIES</b><span>MONITOR&nbsp;&nbsp;|&nbsp;&nbsp;PREDICT<br/>DECIDE&nbsp;&nbsp;|&nbsp;&nbsp;COMPLETE</span></div>
   </aside>
@@ -36,8 +37,8 @@ export default function App(){
     <div className="tg-top-mission">Mission: <b>{mission}</b></div>
     <div className="tg-clock">{clock.toLocaleTimeString([],{hour:"2-digit",minute:"2-digit",second:"2-digit",timeZone:"UTC"})} UTC</div>
     <div className="tg-top-spacer"/>
-    <button className="tg-bell" onClick={()=>setView("diagnostics")}><Bell size={20}/>{(twin?.ai.anomaly||!decisionEligible)&&<i/>}</button>
-    <div className="tg-user"><div className="avatar">KT</div><strong>{user?.name||"Krishna Tayal"}</strong><ChevronDown size={16}/></div>
+    <button className="tg-bell" onClick={()=>setView("diagnostics")} title="Open diagnostics"><Bell size={20}/>{(twin?.ai.anomaly||!decisionEligible)&&<i/>}</button>
+    <button className="tg-user" onClick={()=>setView("settings")} title="Open user and system settings"><div className="avatar">{(user?.name||"KT").split(" ").map(x=>x[0]).slice(0,2).join("")}</div><strong>{user?.name||"Krishna Tayal"}</strong><ChevronDown size={16}/></button>
    </header>
    <section className="tg-content"><ErrorBoundary name="TwinGuard page"><Suspense fallback={<div className="tg-loading">Loading TwinGuard…</div>}>{screen}</Suspense></ErrorBoundary></section>
   </main>
