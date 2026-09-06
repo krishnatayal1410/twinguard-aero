@@ -68,6 +68,11 @@ class AIEngine:
             self.artifact_features = feature_order if isinstance(feature_order, list) else []
         except Exception:
             self.artifact_features = []
+        try:
+            metrics = json.loads((model_path / "synthetic_metrics.json").read_text())
+            self.synthetic_metrics = metrics if isinstance(metrics, dict) else {}
+        except Exception:
+            self.synthetic_metrics = {}
 
         features_match = self.artifact_features == FEATURES
         labels_match = self.labels == SUPPORTED_LABELS
@@ -138,6 +143,7 @@ class AIEngine:
             rul = self._engineering_rul(t, r, trends)
             rul_basis = "engineering_surrogate"
 
+        interval = self._rul_interval(rul, rul_basis, trends, anomaly_score)
         evidence = self.explain(t, r, fault)
         return {
             "anomaly": anomaly,
@@ -146,12 +152,47 @@ class AIEngine:
             "fault_confidence": float(confidence),
             "fault_probabilities": probs,
             "rul_hours": rul,
+            "rul_interval_hours": interval,
+            "rul_uncertainty_hours": round((interval["upper"] - interval["lower"]) / 2, 2),
             "evidence": evidence,
             "model_state": "NATIVE_ML" if self.native_ml and self.fault is not None else "ENGINEERING_FALLBACK",
             "validation_scope": "SYNTHETIC_PROOF_OF_CONCEPT",
             "rul_basis": rul_basis,
+            "rul_interval_basis": interval["basis"],
             "feature_contract": "aero-piston-v2",
             "model_warning": self.model_warning,
+        }
+
+    def _rul_interval(self, estimate, basis, trends, anomaly_score):
+        """Return a conservative POC uncertainty band around RUL.
+
+        This is intentionally not presented as a calibrated statistical
+        confidence interval. For the packaged synthetic regressor we anchor the
+        band to its synthetic RMSE. For the engineering surrogate we use a
+        wider fractional band. Current degradation dynamics widen both bands.
+        """
+        estimate = max(0.0, float(estimate))
+        if basis == "synthetic_xgboost_regressor":
+            rmse = float(self.synthetic_metrics.get("rul_rmse", 12.5) or 12.5)
+            base_half_width = max(12.0, 1.65 * rmse)
+            interval_basis = "synthetic_validation_rmse_plus_state_uncertainty"
+        else:
+            base_half_width = max(20.0, estimate * .24)
+            interval_basis = "engineering_surrogate_conservative_band"
+
+        trend_load = (
+            abs(float(trends.get("health_index_per_min", 0.0))) * .55
+            + abs(float(trends.get("oil_pressure_per_min", 0.0))) * 2.4
+            + abs(float(trends.get("cht_per_min", 0.0))) * .08
+            + abs(float(trends.get("vibration_per_min", 0.0))) * 4.0
+        )
+        half_width = min(max(8.0, base_half_width + trend_load + 7.0 * float(anomaly_score)), max(25.0, estimate * .55))
+        return {
+            "lower": round(max(0.0, estimate - half_width), 2),
+            "estimate": round(estimate, 2),
+            "upper": round(estimate + half_width, 2),
+            "basis": interval_basis,
+            "calibrated_probability_interval": False,
         }
 
     def _engineering_anomaly(self, t, r, trends):
