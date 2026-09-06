@@ -55,6 +55,11 @@ for key in [
 for legacy in ["oil_pressure_per_minute", "cht_per_minute", "health_per_minute"]:
     require(legacy not in demo, f"legacy hosted-demo trend key remains: {legacy}")
 
+# Internal oil-pressure telemetry is in bar, while the UI converts rates to kPa/min.
+# A -4.1 bar/min demo rate would render as -410 kPa/min, so guard the corrected scale.
+require('-4.1*progress' not in demo, "hosted-demo oil-pressure trend is 100x too large")
+require('-.041*progress' in demo, "hosted-demo oil-pressure trend unit guard is missing")
+
 bad_patterns = [
     r"\br\.oil_pressure\b",
     r"\br\.oil_temperature\b",
