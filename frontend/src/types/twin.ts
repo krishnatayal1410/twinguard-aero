@@ -76,6 +76,8 @@ export interface MissionResult{
   thermal_risk:string;
   mechanical_risk:string;
   lubrication_risk:string;
+  combustion_risk?:string;
+  electrical_risk?:string;
   current_health:number;
   post_mission_health:number;
   current_rul_hours:number;
@@ -84,6 +86,8 @@ export interface MissionResult{
     cruise_altitude_m:number;
     duration_hours:number;
     average_throttle_pct:number;
+    projected_stress_index?:number;
+    projected_risk?:string;
   };
   explanation:string;
   mission_feasibility_index?:number;
