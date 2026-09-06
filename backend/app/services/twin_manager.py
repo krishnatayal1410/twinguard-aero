@@ -67,7 +67,7 @@ class TwinManager:
                     points.append((ts, float(source[key])))
         current_source = current if section == "telemetry" else current.get(section, {})
         if key in current_source:
-            ts = self._seconds(current.get("timestamp")) if section != "telemetry" else self._seconds(current.get("timestamp"))
+            ts = self._seconds(current.get("timestamp"))
             if ts is not None:
                 points.append((ts, float(current_source[key])))
         if len(points) < 2:
@@ -137,7 +137,7 @@ class TwinManager:
             }
 
             maintenance = self.maint.decide(health, ai, trust)
-            ready = readiness(health, ai, maintenance)
+            ready = readiness(health, ai, maintenance, quality)
             self.state = {
                 "engine_id": t.get("engine_id", settings.engine_id),
                 "timestamp": t["timestamp"],
@@ -156,6 +156,8 @@ class TwinManager:
                     "physics_model": self.physics.MODEL_ID,
                     "telemetry_source": "SIMULATED_OR_EXTERNAL",
                     "validation_scope": "SYNTHETIC_PROOF_OF_CONCEPT",
+                    "freshness_gate_seconds": settings.telemetry_stale_seconds,
+                    "mission_min_data_quality": settings.mission_min_data_quality,
                 },
             }
             self.previous = t
