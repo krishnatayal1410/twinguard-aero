@@ -222,7 +222,7 @@ def twin(engine_id: str, user=Depends(require_user)):
 @app.get("/api/v1/diagnostics/{engine_id}")
 def diagnostics(engine_id: str, user=Depends(require_user)):
     state = current(engine_id)
-    return {k: state[k] for k in ("ai", "residuals", "trends", "sensor_trust", "data_quality", "health", "confidence", "runtime_validity")}
+    return {k: state[k] for k in ("ai", "residuals", "trends", "events", "sensor_trust", "data_quality", "health", "confidence", "runtime_validity")}
 
 
 @app.get("/api/v1/diagnostics/{engine_id}/explain")
@@ -295,6 +295,14 @@ def replay_get(mission_id: int, user=Depends(require_user)):
     if not mission_record:
         raise HTTPException(404, "Mission not found")
     return mission_record
+
+
+@app.get("/api/v1/replay/missions/{mission_id}/samples")
+def replay_samples(mission_id: int, limit: int = 5000, user=Depends(require_user)):
+    samples = manager.replay.samples(mission_id, limit)
+    if samples is None:
+        raise HTTPException(404, "Mission not found")
+    return samples
 
 
 @app.get("/api/v1/system/status")
