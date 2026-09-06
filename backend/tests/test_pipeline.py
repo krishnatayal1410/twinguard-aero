@@ -58,6 +58,23 @@ def test_mission_analysis_direction():
     assert result["lower_stress_alternative"]["projected_stress_index"] <= result["stress_index"]
 
 
+def test_mission_profile_is_not_a_decorative_label():
+    state = manager.ingest(sample())
+    common = dict(duration_hours=8, cruise_altitude_m=5500, ambient_temp_c=35, average_throttle_pct=75)
+    endurance = manager.mission.analyze(state, MissionRequest(mission_type="endurance", **common))
+    rapid = manager.mission.analyze(state, MissionRequest(mission_type="rapid_throttle", **common))
+    hot = manager.mission.analyze(state, MissionRequest(mission_type="hot_weather", **common))
+    altitude = manager.mission.analyze(state, MissionRequest(mission_type="high_altitude", **common))
+
+    assert endurance["mission_type"] == "endurance"
+    assert rapid["mission_type"] == "rapid_throttle"
+    assert rapid["stress_index"] > endurance["stress_index"]
+    assert rapid["profile_modifiers"]["mechanical"] > endurance["profile_modifiers"]["mechanical"]
+    assert hot["profile_modifiers"]["thermal"] > endurance["profile_modifiers"]["thermal"]
+    assert altitude["profile_modifiers"]["combustion"] > endurance["profile_modifiers"]["combustion"]
+    assert rapid["profile_modifier_description"]
+
+
 def test_degraded_state_reduces_mission_margin():
     healthy = manager.ingest(sample())
     healthy_result = manager.mission.analyze(healthy, MissionRequest())
