@@ -82,9 +82,11 @@ def maintenance_check():
     assert result["rul_interval_hours"]["lower"]<=result["rul_hours"]<=result["rul_interval_hours"]["upper"]
 check("Maintenance + RUL uncertainty",maintenance_check)
 
+MISSION={"mission_type":"endurance","duration_hours":8,"cruise_altitude_m":5500,"ambient_temp_c":35,"average_throttle_pct":75}
+
 
 def mission_check():
-    result=post("/api/v1/mission/analyze",{"mission_type":"endurance","duration_hours":8,"cruise_altitude_m":5500,"ambient_temp_c":35,"average_throttle_pct":75})
+    result=post("/api/v1/mission/analyze",MISSION)
     assert result["overall_risk"] in {"LOW","MEDIUM","HIGH"}
     assert 0<=result["mission_feasibility_index"]<=100
     assert result["rul_margin_ratio"]>=0
@@ -101,28 +103,34 @@ check("Mission Reliability Twin",mission_check)
 
 
 def lubrication_fault():
+    post("/api/v1/simulation/reset")
+    time.sleep(2)
+    baseline=post("/api/v1/mission/analyze",MISSION)
+    baseline_margin=baseline["mission_margin_hours"]
+    baseline_feasibility=baseline["mission_feasibility_index"]
+
     post("/api/v1/simulation/fault",{"fault":"lubrication","severity":0.85})
     deadline=time.time()+45
     detected=False
-    baseline_margin=None
     degraded_margin=None
+    degraded_feasibility=None
     try:
-        baseline=post("/api/v1/mission/analyze",{"mission_type":"endurance","duration_hours":8,"cruise_altitude_m":5500,"ambient_temp_c":35,"average_throttle_pct":75})
-        baseline_margin=baseline["mission_margin_hours"]
         while time.time()<deadline:
             time.sleep(1)
             state=get("/api/v1/twin/ENGINE-01")
             if state["ai"]["anomaly"] and state["health"]["lubrication"]<85:
-                degraded=post("/api/v1/mission/analyze",{"mission_type":"endurance","duration_hours":8,"cruise_altitude_m":5500,"ambient_temp_c":35,"average_throttle_pct":75})
+                degraded=post("/api/v1/mission/analyze",MISSION)
                 degraded_margin=degraded["mission_margin_hours"]
+                degraded_feasibility=degraded["mission_feasibility_index"]
                 detected=True
                 break
     finally:
         post("/api/v1/simulation/reset")
     assert detected,"progressive lubrication scenario did not become observable within 45 s"
-    assert baseline_margin is not None and degraded_margin is not None
+    assert degraded_margin is not None and degraded_feasibility is not None
     assert degraded_margin<baseline_margin,"degraded engine did not reduce mission margin"
-check("Aero-piston degradation changes mission margin",lubrication_fault)
+    assert degraded_feasibility<=baseline_feasibility,"degraded engine did not reduce mission feasibility"
+check("Aero-piston degradation changes mission reliability",lubrication_fault)
 
 
 def replay():
