@@ -14,7 +14,7 @@ _RUNTIME_ENV = os.getenv("TWINGUARD_ENV", "development").strip().lower()
 @dataclass(frozen=True)
 class Settings:
     app_name: str = "TwinGuard Aero"
-    version: str = "3.1.0"
+    version: str = "3.2.0"
     environment: str = _RUNTIME_ENV
     engine_id: str = os.getenv("TWINGUARD_ENGINE_ID", "ENGINE-01")
     database_url: str = os.getenv("DATABASE_URL", "sqlite:///./data/runtime/twinguard.db")
