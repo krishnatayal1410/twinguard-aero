@@ -12,6 +12,14 @@ export type FaultName=
 
 export type ViewName="command"|"diagnostics"|"mission"|"replay"|"maintenance"|"settings";
 
+export interface RulInterval{
+  lower:number;
+  estimate:number;
+  upper:number;
+  basis?:string;
+  calibrated_probability_interval?:boolean;
+}
+
 export interface TwinState{
   engine_id:string;
   timestamp:string;
@@ -37,10 +45,13 @@ export interface TwinState{
     fault_confidence:number;
     fault_probabilities:Record<string,number>;
     rul_hours:number;
+    rul_interval_hours?:RulInterval;
+    rul_uncertainty_hours?:number;
     evidence:Array<{feature:string;weight:number;value:number}>;
     model_state:string;
     validation_scope?:string;
     rul_basis?:string;
+    rul_interval_basis?:string;
     feature_contract?:string;
     anomaly_persistence_samples?:number;
     model_warning?:string|null;
@@ -81,17 +92,29 @@ export interface MissionResult{
   current_health:number;
   post_mission_health:number;
   current_rul_hours:number;
+  current_rul_interval_hours?:RulInterval;
   post_mission_rul_hours:number;
+  post_mission_rul_interval_hours?:RulInterval;
+  rul_margin_ratio?:number;
+  conservative_rul_margin_ratio?:number;
+  projected_profile_endurance_hours?:number;
+  mission_margin_hours?:number;
+  engineering_reserve_hours?:number;
+  decision_horizon_hours?:number;
+  decision_horizon_status?:string;
   lower_stress_alternative:{
     cruise_altitude_m:number;
     duration_hours:number;
     average_throttle_pct:number;
     projected_stress_index?:number;
     projected_risk?:string;
+    projected_profile_endurance_hours?:number;
+    mission_margin_hours?:number;
+    decision_horizon_hours?:number;
+    engineering_reserve_hours?:number;
   };
   explanation:string;
   mission_feasibility_index?:number;
-  rul_margin_ratio?:number;
   risk_factors?:string[];
   validation_scope?:string;
 }
