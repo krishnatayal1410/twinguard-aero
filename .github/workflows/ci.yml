@@ -34,12 +34,28 @@ jobs:
         run: python -m pip install -r backend/requirements.txt
       - name: Compile Python
         run: python -m compileall -q backend simulator ai scripts
+      - name: Enforce SIH26054 domain consistency
+        run: python scripts/domain_consistency_check.py
+      - name: Verify production signup defaults closed
+        env:
+          PYTHONPATH: ${{ github.workspace }}/backend
+          TWINGUARD_ENV: production
+        run: |
+          unset ALLOW_SIGNUP
+          python - <<'PY'
+          from app.core import settings
+          assert settings.environment == 'production'
+          assert settings.allow_signup is False
+          print('Production signup default: disabled')
+          PY
       - name: Run backend tests
         env:
           PYTHONPATH: ${{ github.workspace }}/backend
           MODEL_DIR: ${{ github.workspace }}/models
           DATABASE_URL: sqlite:///${{ github.workspace }}/data/runtime/ci.db
           TWINGUARD_NATIVE_ML: '0'
+          TWINGUARD_ENV: development
+          ALLOW_SIGNUP: '1'
         run: |
           mkdir -p data/runtime
           pytest -q backend/tests
@@ -92,6 +108,8 @@ jobs:
           DATABASE_URL: sqlite:///${{ github.workspace }}/data/runtime/ci-integration.db
           TWINGUARD_NATIVE_ML: '0'
           TWINGUARD_API: http://127.0.0.1:8000
+          TWINGUARD_ENV: development
+          ALLOW_SIGNUP: '1'
         run: |
           mkdir -p data/runtime
           python -m uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8000 >/tmp/twinguard-backend.log 2>&1 &
