@@ -33,10 +33,10 @@ class AuthResponse(BaseModel):
 class Telemetry(BaseModel):
     """Canonical TwinGuard telemetry contract.
 
-    Units are deliberately explicit here because the dashboard, simulator,
-    physics surrogate and AI feature pipeline must use exactly the same basis.
-    The current proof-of-concept uses bar for oil pressure and SI units for the
-    remaining channels.
+    The proof-of-concept uses bar internally for oil pressure; the HMI converts
+    bar to kPa exactly once for engineering display. All components must use
+    these names and units so simulator, backend, WebSocket and frontend remain
+    contract-compatible.
     """
 
     engine_id: EngineId = "ENGINE-01"
@@ -85,12 +85,21 @@ class ReplayStart(BaseModel):
     label: Optional[Annotated[str, StringConstraints(strip_whitespace=True, max_length=120)]] = None
 
 
+class TwinEvent(BaseModel):
+    timestamp: datetime
+    type: str
+    severity: Literal["info", "warning", "critical", "success"]
+    message: str
+
+
 class TwinState(BaseModel):
     engine_id: str
     timestamp: datetime
     telemetry: Dict[str, float | str]
     expected: Dict[str, float]
     residuals: Dict[str, float]
+    trends: Dict[str, float]
+    events: list[TwinEvent]
     sensor_trust: Dict[str, float]
     data_quality: Dict[str, float | str]
     health: Dict[str, float]
