@@ -7,15 +7,31 @@ import os
 import joblib
 import numpy as np
 
-# Keep the packaged anomaly model on its original feature contract so older
-# synthetic model artifacts cannot crash a newer runtime. New fault/RUL models
-# are only enabled when their label manifest matches the current aero-piston
-# taxonomy.
 FEATURES = [
-    "rpm", "throttle", "cht", "egt", "oil_pressure", "oil_temperature", "fuel_flow", "vibration",
-    "altitude", "ambient_temperature", "cht_residual", "egt_residual", "oil_pressure_residual",
-    "oil_temperature_residual", "fuel_flow_residual", "vibration_residual",
+    "rpm",
+    "throttle",
+    "cht",
+    "egt",
+    "oil_pressure",
+    "oil_temperature",
+    "fuel_flow",
+    "vibration",
+    "battery_voltage",
+    "alternator_voltage",
+    "injection_timing",
+    "altitude",
+    "ambient_temperature",
+    "cht_residual",
+    "egt_residual",
+    "oil_pressure_residual",
+    "oil_temperature_residual",
+    "fuel_flow_residual",
+    "vibration_residual",
+    "battery_voltage_residual",
+    "alternator_voltage_residual",
+    "injection_timing_residual",
 ]
+
 SUPPORTED_LABELS = [
     "normal",
     "lubrication",
@@ -47,18 +63,32 @@ class AIEngine:
             self.labels = labels if isinstance(labels, list) else []
         except Exception:
             self.labels = []
+        try:
+            feature_order = json.loads((model_path / "feature_order.json").read_text())
+            self.artifact_features = feature_order if isinstance(feature_order, list) else []
+        except Exception:
+            self.artifact_features = []
 
-        # Isolation Forest remains backward compatible with the legacy feature
-        # contract. Fault/RUL artifacts are stricter because a stale label map
-        # can silently turn one engine condition into another.
-        self.anomaly = safe("anomaly_model.joblib")
+        features_match = self.artifact_features == FEATURES
         labels_match = self.labels == SUPPORTED_LABELS
-        self.native_ml = self.native_ml_requested and labels_match
+        artifacts_compatible = features_match and labels_match
+
+        # Never send a new feature vector through a stale packaged model. The
+        # prior build contained a different feature/fault contract; silently
+        # loading it would be worse than an explicit engineering fallback.
+        self.anomaly = safe("anomaly_model.joblib") if features_match else None
+        self.native_ml = self.native_ml_requested and artifacts_compatible
         self.fault = safe("fault_model.joblib") if self.native_ml else None
         self.rul = safe("rul_model.joblib") if self.native_ml else None
-        self.model_warning = None
-        if self.native_ml_requested and not labels_match:
-            self.model_warning = "Packaged fault/RUL artifacts use an older fault taxonomy; stable engineering fallback is active until models are retrained."
+
+        warnings = []
+        if not features_match and self.artifact_features:
+            warnings.append("Packaged models use an older feature contract")
+        if not labels_match and self.labels:
+            warnings.append("packaged classifier uses an older fault taxonomy")
+        if self.native_ml_requested and not artifacts_compatible:
+            warnings.append("native ML was requested but incompatible artifacts were rejected")
+        self.model_warning = "; ".join(warnings) + ". Retrain the synthetic model pack before enabling native ML." if warnings else None
 
     def vector(self, telemetry, residuals):
         merged = {**telemetry, **residuals}
@@ -122,6 +152,7 @@ class AIEngine:
             "model_state": "NATIVE_ML" if self.native_ml and self.fault is not None else "ENGINEERING_FALLBACK",
             "validation_scope": "SYNTHETIC_PROOF_OF_CONCEPT",
             "rul_basis": rul_basis,
+            "feature_contract": "aero-piston-v2",
             "model_warning": self.model_warning,
         }
 
@@ -133,8 +164,9 @@ class AIEngine:
             + max(0, t["vibration"] - .3) / .7
             + abs(r.get("battery_voltage_residual", 0)) / 2.2
             + abs(r.get("alternator_voltage_residual", 0)) / 2.5
+            + abs(r.get("injection_timing_residual", 0)) / 3.0
         )
-        score = max(0.0, min(1.0, z / 2.6))
+        score = max(0.0, min(1.0, z / 2.9))
         return score, score > .32
 
     def _engineering_fault(self, t, r, anomaly):
@@ -144,7 +176,7 @@ class AIEngine:
             "cooling_degradation": max(0, r["cht_residual"]) / 38 + max(0, r["oil_temperature_residual"]) / 28,
             "vibration": max(0, t["vibration"] - .3) / .7,
             "sensor_drift": max(0, abs(r["oil_pressure_residual"]) - .8) / 1.5,
-            "injector": max(0, abs(r["fuel_flow_residual"]) - 1) / 4 + max(0, abs(r["egt_residual"]) - 35) / 100,
+            "injector": max(0, abs(r["fuel_flow_residual"]) - 1) / 4 + max(0, abs(r["egt_residual"]) - 35) / 100 + abs(r.get("injection_timing_residual", 0)) / 5,
             "misfire": max(0, t["vibration"] - .35) / .8 + max(0, abs(r["egt_residual"]) - 30) / 120,
             "combustion_instability": max(0, abs(r["egt_residual"]) - 20) / 90 + max(0, t["vibration"] - .28) / .75 + max(0, abs(r["fuel_flow_residual"]) - .5) / 4,
             "alternator_degradation": max(0, -r.get("alternator_voltage_residual", 0)) / 3 + max(0, -r.get("battery_voltage_residual", 0)) / 2,
@@ -180,6 +212,7 @@ class AIEngine:
             "vibration_residual": abs(r["vibration_residual"]) / .65,
             "battery_voltage_residual": abs(r.get("battery_voltage_residual", 0)) / 2,
             "alternator_voltage_residual": abs(r.get("alternator_voltage_residual", 0)) / 2.5,
+            "injection_timing_residual": abs(r.get("injection_timing_residual", 0)) / 3,
         }
         total = sum(candidates.values()) or 1
         return [
