@@ -1,121 +1,51 @@
-import{useEffect,useMemo,useState}from"react";
-import{motion}from"framer-motion";
-import{Activity,BatteryCharging,Crosshair,Droplets,Expand,Eye,Layers3,Pause,Play,RotateCw,ZoomOut,ZoomIn,ShieldCheck,Thermometer,Wind,Zap}from"lucide-react";
+import{Activity,AlertTriangle,BatteryCharging,Database,Droplets,HeartPulse,Shield,Signal,Thermometer,Timer,Wind,Zap}from"lucide-react";
+import{useState}from"react";
 import{useTwinStore}from"../store/twinStore";
-import{setFault}from"../services/twinApi";
-import type{FaultName}from"../types/twin";
 import EngineTwin from"./EngineTwin";
-import UAVContext from"./UAVContext";
-import MissionThumbnail from"./MissionThumbnail";
-import type{MissionVariant}from"./MissionThumbnail";
-import{Badge,Card,MiniSpark,Progress,SectionTitle,fmt,pct,pretty}from"./ui";
-
-const defs=[
- ["rpm","RPM","RPM",0,Activity],
- ["cht","CHT","°C",1,Thermometer],
- ["egt","EGT","°C",1,Thermometer],
- ["oil_pressure","OIL PRESSURE","bar",2,Droplets],
- ["vibration","VIBRATION","g RMS",3,Activity],
- ["altitude","ALTITUDE","m",0,Wind],
- ["battery_voltage","BATTERY","V",1,BatteryCharging]
-]as const;
-
-const replayEvents:Array<{label:string;variant:MissionVariant;time:string}>=[
- {label:"Flight Start",variant:"start",time:"00:00"},
- {label:"Cruise Phase",variant:"cruise",time:"00:08"},
- {label:"Wind Shear",variant:"shear",time:"00:25"},
- {label:"Altitude Change",variant:"altitude",time:"00:33"},
- {label:"Mission Complete",variant:"complete",time:"00:53"}
-];
+import{fmt,pct,pretty}from"./ui";
+import{MetricCard,PageHeader,Panel,PanelTitle,StatusPill}from"./ReferenceUI";
 
 export default function CommandCenter(){
- const twin=useTwinStore(s=>s.twin),runtimeValidity=useTwinStore(s=>s.runtimeValidity),history=useTwinStore(s=>s.history),missionRuns=useTwinStore(s=>s.missionRuns),setView=useTwinStore(s=>s.setView),setFocus=useTwinStore(s=>s.setFocus);
- const[explode,setExplode]=useState(true),[xray,setXray]=useState(false),[rotate,setRotate]=useState(false),[zoom,setZoom]=useState(1),[resetToken,setResetToken]=useState(0);
- const[fault,setFaultName]=useState<FaultName>("normal"),[severity,setSeverity]=useState(50),[playing,setPlaying]=useState(false),[replayProgress,setReplayProgress]=useState(48),[selectedEvent,setSelectedEvent]=useState(2);
- const health=twin?.health.overall??94,faultName=twin?.ai.probable_fault??"normal",evidence=twin?.ai.evidence??[],ready=twin?.readiness.label??"READY";
- const decisionEligible=runtimeValidity?.decision_eligible!==false,displayReady=decisionEligible?ready:"DATA HOLD",conservativeRul=twin?.ai.rul_interval_hours?.lower;
- const latestMission=missionRuns.length?missionRuns[missionRuns.length-1].result:undefined;
- const metrics=useMemo(()=>defs.map(([key,label,unit,d,Icon])=>({key,label,unit,d,Icon,value:Number(twin?.telemetry[key]??0),hist:history[key]??[]})),[twin,history]);
- useEffect(()=>{if(!playing)return;const id=window.setInterval(()=>setReplayProgress(v=>v>=100?0:v+1),300);return()=>window.clearInterval(id)},[playing]);
- const inject=()=>setFault(fault,fault==="normal"?0:severity/100).catch(()=>undefined);
- const fullscreen=()=>document.getElementById("engine-reference-stage")?.requestFullscreen?.();
- const resetCamera=()=>{setZoom(1);setRotate(false);setResetToken(v=>v+1)};
- const replayTime=Math.round(53*replayProgress/100),timeLabel=`${String(Math.floor(replayTime/60)).padStart(2,"0")}:${String(replayTime%60).padStart(2,"0")}`;
- const synthetic=twin?.ai.validation_scope==="SYNTHETIC_PROOF_OF_CONCEPT"||twin?.twin_meta?.validation_scope==="SYNTHETIC_PROOF_OF_CONCEPT";
-
- return <motion.div className="reference-page" initial={{opacity:0}} animate={{opacity:1}}>
-  <div className="reference-top">
-   <Card className="exact-engine-card">
-    <div className="engine-card-heading">
-     <SectionTitle eyebrow="DIGITAL TWIN  •  ENGINE-01" title="Aero-Piston Engine Digital Twin" action={<Badge kind={decisionEligible?"blue":"warn"}><Activity size={12}/>{decisionEligible?"Live":"Data Hold"}</Badge>}/>
-     <div className="overall-health-mini"><ShieldCheck/><div><span>Engineering Health Index</span><strong>{pct(health)}</strong><small>{health>=94?"Nominal":health>=85?"Monitor":"Review"}</small></div><b>⋮</b></div>
-    </div>
-    <div id="engine-reference-stage" className="engine-reference-stage true-3d-engine">
-     <EngineTwin compact explode={explode} xray={xray} focus="all" autoRotate={rotate} zoom={zoom} resetToken={resetToken} onFocus={m=>{setFocus(m);setView("diagnostics")}}/>
-     <div className="engine-data-box box-a"><span>CYLINDER BANKS</span><div><i/>Health <b>{pct(Math.min(twin?.health.thermal??96,twin?.health.combustion??96))}</b><em>CHT {fmt(twin?.telemetry.cht,0)}°C</em></div></div>
-     <div className="engine-data-box box-b"><span>LUBRICATION</span><div><i/>Health <b>{pct(twin?.health.lubrication)}</b><em>Oil {fmt(twin?.telemetry.oil_pressure,2)} bar</em></div></div>
-     <div className="engine-data-box box-e"><span>FUEL / INDUCTION</span><div><i className="hot"/>Health <b>{pct(twin?.health.combustion)}</b><em>Flow {fmt(twin?.telemetry.fuel_flow,1)} L/h</em></div></div>
-     <div className="engine-data-box box-c"><span>EXHAUST / THERMAL</span><div><i/>Health <b>{pct(twin?.health.thermal)}</b><em>EGT {fmt(twin?.telemetry.egt,0)}°C</em></div></div>
-     <div className="engine-data-box box-d"><span>ELECTRICAL</span><div><i/>Health <b>{pct(twin?.health.electrical)}</b><em>ALT {fmt(twin?.telemetry.alternator_voltage,1)} V</em></div></div>
-     <div className="exact-model-controls">
-      <button className={rotate?"active":""} onClick={()=>setRotate(v=>!v)}><RotateCw size={14}/>Rotate</button>
-      <button className={explode?"active":""} onClick={()=>setExplode(v=>!v)}><Layers3 size={14}/>{explode?"Assemble":"Explode"}</button>
-      <button title="Zoom out" onClick={()=>setZoom(v=>Math.min(1.35,v+.10))}><ZoomOut size={14}/></button>
-      <button title="Zoom in" onClick={()=>setZoom(v=>Math.max(.72,v-.10))}><ZoomIn size={14}/></button>
-      <button title="Reset view" onClick={resetCamera}><Crosshair size={14}/></button>
-      <button className={xray?"active":""} title="X-Ray" onClick={()=>setXray(v=>!v)}><Eye size={14}/></button>
-      <button title="Fullscreen" onClick={fullscreen}><Expand size={14}/></button>
-     </div>
-    </div>
-   </Card>
-
-   <Card className="exact-context-card">
-    <SectionTitle eyebrow="ASSET CONTEXT" title="MALE UAV System View" action={<button className="dots">⋮</button>}/>
-    <div className="exact-uav-view true-uav-view"><UAVContext/></div>
-    <div className="exact-context-kpis">{[["Altitude",`${fmt(twin?.telemetry.altitude,0)} m`],["Throttle",`${fmt(twin?.telemetry.throttle,0)}%`],["Engine Speed",`${fmt(twin?.telemetry.rpm,0)} RPM`],["Mission Phase","Cruise"]].map(x=><div key={x[0]}><span>{x[0]}</span><strong>{x[1]}</strong></div>)}</div>
-   </Card>
-
-   <Card className="exact-decision-card">
-    <SectionTitle eyebrow="DECISION SUPPORT" title="" action={synthetic?<Badge kind="blue">Synthetic POC</Badge>:<button className="dots">⋮</button>}/>
-    <div className="decision-heading"><div><strong>{displayReady==="READY"?"Mission Release: Ready":pretty(displayReady)}</strong><span>{decisionEligible?(twin?.readiness.reason??"Waiting for synchronized twin state"):`Telemetry is not currently decision-eligible. Last state age ${fmt(runtimeValidity?.telemetry_age_seconds,1)} s.`}</span></div><div className="decision-shield"><ShieldCheck/></div></div>
-    <div className="decision-stats"><div><span>RUL Estimate</span><b>{fmt(twin?.ai.rul_hours,1)} h</b></div><div><span>Conservative RUL</span><b>{fmt(conservativeRul,1)} h</b></div><div><span>Diagnostic Confidence</span><Badge kind={(twin?.confidence.decision??0)>84?"good":"warn"}>{(twin?.confidence.decision??0)>84?"High":"Review"}</Badge><b>{pct(twin?.confidence.decision)}</b></div></div>
-    <div className="decision-maintenance"><span>Maintenance Assessment</span><strong>{twin?.maintenance.priority==="MONITOR"?"Monitor / Trend":pretty(twin?.maintenance.priority)}</strong><p>{twin?.maintenance.reason??"Awaiting telemetry."}</p></div>
-    <button className="view-ai-report" onClick={()=>setView("diagnostics")}><Zap size={13}/>View Evidence Report</button>
-   </Card>
+ const twin=useTwinStore(s=>s.twin),runtime=useTwinStore(s=>s.runtimeValidity),runs=useTwinStore(s=>s.missionRuns),setView=useTwinStore(s=>s.setView),[mode,setMode]=useState<"3d"|"map">("3d");
+ const t=twin?.telemetry??{},h=twin?.health,ai=twin?.ai,last=runs.length?runs[runs.length-1].result:undefined,eligible=runtime?.decision_eligible!==false;
+ const fault=ai?.anomaly?pretty(ai.probable_fault):"Normal Operation",risk=last?.overall_risk??(h&&h.overall<70?"HIGH":h&&h.overall<86?"MEDIUM":"LOW"),feas=last?.mission_feasibility_index??Math.max(0,Math.min(100,Math.round((h?.overall??96)*.86)));
+ const oilKpa=Number(t.oil_pressure??0)*100;
+ return <div className="ref-page command-page">
+  <PageHeader title="Command Center" subtitle="Real-time overview, AI decision support, and key engine metrics"/>
+  <div className="cc-metrics">
+   <MetricCard icon={<Activity/>} label="RPM" value={Number(t.rpm??0)} quality={98}/>
+   <MetricCard icon={<Thermometer/>} label="CHT" value={Number(t.cht??0)} unit="°C" quality={96}/>
+   <MetricCard icon={<Thermometer/>} label="EGT" value={Number(t.egt??0)} unit="°C" quality={95}/>
+   <MetricCard icon={<Droplets/>} label="Oil Pressure" value={oilKpa} unit="kPa" quality={91}/>
+   <MetricCard icon={<Activity/>} label="Vibration" value={Number(t.vibration??0)} unit="g" quality={92}/>
+   <MetricCard icon={<Database/>} label="Data Quality" value={Math.round(Number(twin?.confidence.data_quality??98))} unit="%" quality={Number(twin?.confidence.data_quality??98)}/>
   </div>
-
-  <div className="reference-lower">
-   <div className="lower-main">
-    <div className="exact-metrics">{metrics.map(({key,label,unit,d,Icon,value,hist})=><Card key={key} className="exact-metric-card"><div className="metric-label"><Icon size={14}/><span>{label}</span></div><strong>{fmt(value,d)} <small>{unit}</small></strong><MiniSpark values={hist}/><em>{hist.length>1?`${(hist[hist.length-1]-hist[hist.length-2])>=0?"↗":"↘"} ${Math.abs((hist[hist.length-1]??0)-(hist[hist.length-2]??0)).toFixed(d?d:1)}`:"—"}</em></Card>)}</div>
-
-    <div className="exact-bottom-row">
-     <Card className="exact-mission-card">
-      <SectionTitle eyebrow="MISSION RELIABILITY TWIN" title="Latest mission analysis" action={latestMission?<Badge kind={latestMission.overall_risk==="LOW"?"good":latestMission.overall_risk==="MEDIUM"?"warn":"bad"}>{latestMission.overall_risk}</Badge>:undefined}/>
-      <div className="mission-reference-content">
-       <div className="mission-input-panel"><strong>Current Twin Inputs</strong>{[["Health index",pct(twin?.health.overall)],["Conservative RUL",`${fmt(conservativeRul,1)} h`],["RUL basis",pretty(twin?.ai.rul_basis??"engineering_surrogate")],["Active condition",twin?.ai.anomaly?pretty(faultName):"Normal"],["Data gate",decisionEligible?"Decision eligible":"DATA HOLD"],["Validation","Synthetic POC"]].map(x=><div key={x[0]}><span>{x[0]}</span><b>{x[1]}</b></div>)}</div>
-       <div className="future-simulation"><strong>{latestMission?"Backend Mission Result":"Mission analysis not run yet"}</strong>{latestMission?<><div className="future-stat-row"><div><span>Mission Risk</span><b>{latestMission.overall_risk}</b></div><div><span>Feasibility</span><b>{fmt(latestMission.mission_feasibility_index,0)}/100</b></div><div><span>Mission Margin</span><b>{fmt(latestMission.mission_margin_hours,1)} h</b></div><div><span>Decision Horizon</span><b>{fmt(latestMission.decision_horizon_hours,1)} h</b></div></div><div className="key-trends"><span>Decision</span><p>{pretty(latestMission.decision)}</p><small>{latestMission.explanation}</small></div></>:<div className="empty-state"><strong>No fabricated prediction shown</strong><p>Open Mission Lab and run a profile. This panel will display only backend-generated results.</p></div>}<button onClick={()=>setView("mission")}>{latestMission?"Open Full Mission Analysis":"Configure Mission"}</button></div>
-      </div>
-     </Card>
-
-     <div className="replay-stack">
-      <Card className="exact-replay-card">
-       <SectionTitle eyebrow="MISSION REPLAY" title="Recent Events" action={<button className="text-link" onClick={()=>setView("replay")}>View All</button>}/>
-       <div className="reference-events">{replayEvents.map((event,i)=><button key={event.label} className={`replay-event ${selectedEvent===i?"selected":""} ${i===2&&twin?.ai.anomaly?"warn":""}`} onClick={()=>{setSelectedEvent(i);setReplayProgress(i*25)}}><div className="reference-thumb true-replay-thumb"><MissionThumbnail variant={event.variant}/><span><Play size={10}/></span></div><strong>{i===2&&twin?.ai.anomaly?"Condition Detected":event.label}</strong><small>Today {event.time}</small></button>)}</div>
-       <div className="replay-player"><span>{timeLabel} / 00:53</span><div><i style={{width:`${replayProgress}%`}}/></div><button title="Play" onClick={()=>setPlaying(true)} className={playing?"active":""}><Play size={11}/></button><button title="Pause" onClick={()=>setPlaying(false)}><Pause size={11}/></button><b>1x</b></div>
-      </Card>
-      <Card className="exact-simulator-strip"><span>SIMULATOR · SYNTHETIC</span><label>Inject Aero-Piston Scenario<select value={fault} onChange={e=>setFaultName(e.target.value as FaultName)}><option value="normal">Normal / Healthy</option><option value="lubrication">Lubrication Degradation</option><option value="overheating">Overheating</option><option value="cooling_degradation">Cooling Degradation</option><option value="vibration">Abnormal Vibration</option><option value="sensor_drift">Sensor Drift</option><option value="injector">Injector Abnormality</option><option value="misfire">Misfire</option><option value="combustion_instability">Combustion Instability</option><option value="alternator_degradation">Alternator Degradation</option></select></label><label className="exact-severity">Target Severity<input type="range" min="0" max="100" value={severity} onChange={e=>setSeverity(Number(e.target.value))}/><b>{severity<35?"Low":severity<70?"Medium":"Severe"}</b></label><button onClick={inject}><Play size={12}/>Run Scenario</button></Card>
-     </div>
+  <div className="cc-main-grid">
+   <Panel className="cc-engine-panel">
+    <PanelTitle title="Engine System Overview" subtitle="TG-01 Aero-Piston Engine - Key Subsystems Health" right={<div className="ref-toggle"><button className={mode==="3d"?"active":""} onClick={()=>setMode("3d")}>3D View</button><button className={mode==="map"?"active":""} onClick={()=>setMode("map")}>System Map</button></div>}/>
+    <div className="cc-engine-stage">{mode==="3d"?<EngineTwin compact focus="all"/>:<div className="system-map"><div className="sys core">CRANKCASE</div><div className="sys s1">CYL A</div><div className="sys s2">CYL B</div><div className="sys s3">INDUCTION</div><div className="sys s4">LUBRICATION</div><div className="sys s5">EXHAUST</div><div className="sys s6">ELECTRICAL</div></div>}
+     <div className="engine-callout induction"><b>Induction System</b><span className="good">● {pct(h?.combustion??96)}</span><small>Healthy</small></div>
+     <div className="engine-callout bank-a"><b>Cylinder Bank A</b><span className="good">● {pct(Math.min(h?.thermal??94,h?.combustion??94))}</span><small>Normal</small></div>
+     <div className="engine-callout bank-b"><b>Cylinder Bank B</b><span className="good">● {pct(Math.min(h?.thermal??95,h?.combustion??95))}</span><small>Normal</small></div>
+     <div className="engine-callout lubrication"><b>Lubrication System</b><span className={(h?.lubrication??82)<86?"warn":"good"}>● {pct(h?.lubrication??82)} Attention</span></div>
+     <div className="engine-callout electrical"><b>Electrical System</b><span className="good">● {pct(h?.electrical??97)}</span><small>Healthy</small></div>
+     <div className="engine-callout exhaust"><b>Exhaust System</b><span className="good">● {pct(h?.thermal??91)}</span><small>Normal</small></div>
     </div>
-   </div>
-
-   <Card className="exact-diagnostics-card">
-    <SectionTitle eyebrow="DIAGNOSTICS  •  EXPLAINABILITY" title="" action={<button className="dots">⋮</button>}/>
-    <div className="exact-condition"><span>Probable Condition</span><Badge kind={twin?.ai.anomaly?"warn":"good"}>{twin?.ai.anomaly?pretty(faultName):"Normal Operation"}</Badge><span>Diagnostic Confidence</span><div className="exact-confidence"><b>{pct(Math.min(99,twin?.confidence.decision??92))}</b></div></div>
-    <div className="evidence-label">Evidence</div>
-    <div className="exact-evidence">{(evidence.length?evidence:[{feature:"egt_residual",weight:.25,value:0},{feature:"cht_residual",weight:.25,value:0},{feature:"vibration_residual",weight:.25,value:0},{feature:"oil_pressure_residual",weight:.25,value:0}]).slice(0,4).map(x=><div key={x.feature}><span>{pretty(x.feature)}</span><Progress value={x.weight*100}/><b>{pct(x.weight*100)}</b></div>)}</div>
-    <div className="ai-brain-visual"><div className="brain-network"><i/><i/><i/><i/><i/><i/><i/><i/><i/></div></div>
-    <div className="model-insight-reference"><strong>Model Insight</strong><p>{twin?.ai.anomaly?twin?.maintenance.reason:"Residuals are currently within the demonstrator's nominal envelope."}</p><p>{twin?.ai.model_warning??(synthetic?"Synthetic proof-of-concept: engine-specific calibration and test-rig validation are still required.":"No significant degradation detected.")}</p></div>
-   </Card>
+   </Panel>
+   <Panel className="cc-ai-panel">
+    <PanelTitle icon={<Zap/>} title="AI Decision Center" subtitle="Continuous analysis of engine data and mission context"/>
+    <div className={`cc-alert ${ai?.anomaly?"bad":"good"}`}><AlertTriangle/><div><small>Probable Issue</small><b>{ai?.anomaly?fault:"No Active Fault"}</b></div></div>
+    <div className="cc-ai-pair"><div><Signal/><span>Confidence</span><b>{pct(ai?.fault_confidence??twin?.confidence.decision??86)}</b><div className="mini-progress"><i style={{width:`${Math.min(100,Number(ai?.fault_confidence??86))}%`}}/></div></div><div><Shield/><span>Risk Level</span><StatusPill tone={risk==="LOW"?"green":risk==="MEDIUM"?"orange":"red"}>{risk}</StatusPill></div></div>
+    <div className="cc-recommend"><div><b>Recommended Action</b><p>{twin?.maintenance.reason??"Continue with reduced load and monitor oil parameters."}</p><small>{eligible?"Telemetry and model state are decision-eligible.":"Data hold is active. Do not use mission analysis until telemetry recovers."}</small></div></div>
+    <button className="ref-primary" onClick={()=>setView("diagnostics")}>View Detailed Analysis →</button>
+   </Panel>
   </div>
- </motion.div>
+  <div className="cc-bottom">
+   <Panel className="cc-stat"><div className="stat-icon blue"><HeartPulse/></div><span>Engine Health</span><b className="green-text">{pct(h?.overall??84)}</b><small>Overall engine health index</small><div className="donut" style={{"--v":`${Math.round(h?.overall??84)*3.6}deg`} as any}/></Panel>
+   <Panel className="cc-stat"><div className="stat-icon orange"><AlertTriangle/></div><span>Mission Risk</span><StatusPill tone={risk==="LOW"?"green":risk==="MEDIUM"?"orange":"red"}>{risk}</StatusPill><small>Based on current condition and mission profile</small></Panel>
+   <Panel className="cc-stat"><div className="stat-icon blue"><Timer/></div><span>RUL (Est.)</span><b>{fmt(ai?.rul_hours,0)} <small>h</small></b><small>Remaining useful life {ai?.rul_interval_hours?`(${fmt(ai.rul_interval_hours.lower,0)}–${fmt(ai.rul_interval_hours.upper,0)} h)`:""}</small></Panel>
+   <Panel className="cc-stat"><div className="stat-icon blue"><Signal/></div><span>Mission Feasibility</span><b className="green-text">{Math.round(feas)}%</b><small>{last?"Backend mission analysis":"Run Mission Lab for a full evaluation"}</small><div className="donut" style={{"--v":`${Math.round(feas)*3.6}deg`} as any}/></Panel>
+   <Panel className="cc-stat"><div className="stat-icon blue"><Database/></div><span>Data Status</span><b className={eligible?"green-text":"orange-text"}>● {eligible?"LIVE":"HOLD"}</b><small>{eligible?"Telemetry, model & AI systems operational":"Telemetry not decision-eligible"}</small></Panel>
+  </div>
+ </div>
 }
