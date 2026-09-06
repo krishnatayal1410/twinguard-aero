@@ -72,7 +72,6 @@ jobs:
           python - <<'PY'
           from app.services.ai_engine import AIEngine
           from app.services.physics import PhysicsEngine
-
           telemetry = {
               'rpm': 4100, 'throttle': 70, 'cht': 181, 'egt': 702,
               'oil_pressure': 4.47, 'oil_temperature': 108, 'fuel_flow': 20.6,
@@ -163,7 +162,20 @@ jobs:
       - name: Install frontend dependencies
         run: npm install --no-audit --no-fund
       - name: Typecheck and production build
-        run: npm run build
+        shell: bash
+        run: |
+          set +e
+          npm run build 2>&1 | tee /tmp/twinguard-frontend-build.log
+          code=${PIPESTATUS[0]}
+          if [ "$code" -ne 0 ]; then
+            {
+              echo '### Frontend build diagnostics'
+              echo '```text'
+              tail -n 120 /tmp/twinguard-frontend-build.log
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          exit "$code"
 
   browser-e2e:
     needs: frontend
