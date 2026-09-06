@@ -65,6 +65,11 @@ class MissionRequest(BaseModel):
     average_throttle_pct: float = Field(75, ge=10, le=100, description="Representative average throttle/load, percent")
 
 
+class RuntimeConfig(BaseModel):
+    telemetry_stale_seconds: float = Field(8, ge=2, le=60, description="Telemetry age limit for decision eligibility, seconds")
+    mission_min_data_quality: float = Field(70, ge=0, le=100, description="Minimum data-quality score for mission analysis")
+
+
 class FaultCommand(BaseModel):
     fault: Literal[
         "normal",
