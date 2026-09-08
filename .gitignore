@@ -8,3 +8,6 @@ __pycache__/
 data/runtime/*.db
 .env
 .DS_Store
+.vercel
+.env.local
+*.tsbuildinfo
