@@ -46,6 +46,8 @@ The engine and AI region was inspected separately in assembled, exploded, X-ray 
 
 - Assembled, exploded and X-ray engine modes.
 - Rotate/auto-rotate, reset-camera, opacity control and fullscreen entry/exit.
+- One-click fault location: X-ray activation, 26% casing opacity, subsystem isolation, component labels and persistent fault marker.
+- Adjustable exploded-view separation, wireframe rendering, component-label toggle and light/dark inspection stage.
 - Fullscreen diagnostic drawer and fault marker.
 - Create-account modal, local hosted-demo account creation and signed-in header.
 - Direct User settings navigation.
@@ -56,6 +58,7 @@ The engine and AI region was inspected separately in assembled, exploded, X-ray 
 - Production TypeScript/Vite build passes.
 - Backend test suite passes: 14 tests.
 - Browser-rendered desktop visual and interaction pass completed.
+- Final browser reload produced no new runtime errors; the earlier Vite hot-reload message was limited to the intentional delete/re-add edit while the dev server was running.
 - Source and implementation compared together in `design-comparison.png`.
 
 final result: passed
