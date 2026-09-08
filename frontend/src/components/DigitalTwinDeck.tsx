@@ -1,38 +1,359 @@
-import{Activity,Clock3,Fuel,Gauge,Mountain,ShieldCheck,Thermometer}from"lucide-react";
-import{useState}from"react";
-import{useTwinStore}from"../store/twinStore";
-import EngineTwin from"./EngineTwin";
-import{fmt,pretty}from"./ui";
-import{EngineeringReadout,MiniLineChart,PageHeader,Panel,PanelTitle,StatusPill}from"./ReferenceUI";
+import { Activity, Clock3, Fuel, Gauge, Mountain, ShieldCheck, Thermometer } from "lucide-react";
+import { useState } from "react";
+import { useTwinStore } from "../store/twinStore";
+import EngineTwin from "./EngineTwin";
+import { fmt, pretty } from "./ui";
+import { EngineeringReadout, MiniLineChart, PageHeader, Panel, PanelTitle, StatusPill } from "./ReferenceUI";
 
-type Tab="overview"|"expected"|"residuals"|"trends"|"model";
-export default function DigitalTwinDeck(){
- const twin=useTwinStore(s=>s.twin),history=useTwinStore(s=>s.history),[tab,setTab]=useState<Tab>("overview");
- if(!twin)return <div className="empty-screen">Waiting for synchronized telemetry…</div>;
- const t=twin.telemetry,e=twin.expected,r=twin.residuals,tr=twin.trends;
- const rows=[
-  ["CHT","°C",t.cht,e.cht,r.cht_residual,1],
-  ["EGT","°C",t.egt,e.egt,r.egt_residual,1],
-  ["Oil Pressure","kPa",t.oil_pressure*100,e.oil_pressure*100,r.oil_pressure_residual*100,1],
-  ["Oil Temperature","°C",t.oil_temperature,e.oil_temperature,r.oil_temperature_residual,1],
-  ["Fuel Flow","L/h",t.fuel_flow,e.fuel_flow,r.fuel_flow_residual,2],
-  ["Vibration","g",t.vibration,e.vibration,r.vibration_residual,3],
-  ["Battery Voltage","V",t.battery_voltage,e.battery_voltage,r.battery_voltage_residual,2],
-  ["Alternator Voltage","V",t.alternator_voltage,e.alternator_voltage,r.alternator_voltage_residual,2]
- ] as const;
- const table=<div className="ref-table-wrap"><table className="ref-table"><thead><tr><th>Parameter</th><th>Actual</th><th>Expected</th><th>Residual</th><th>Trend</th></tr></thead><tbody>{rows.map(([name,unit,a,x,res,d])=>{const n=Number(res),threshold=name==="Oil Pressure"?10:name==="Vibration"?.02:3,trend=Math.abs(n)<threshold?"Stable":n>0?"Rising":"Falling";return <tr key={name}><td>{name}</td><td><b>{fmt(a,d)} {unit}</b></td><td>{fmt(x,d)} {unit}</td><td className={n>0?"res-pos":n<0?"res-neg":""}>{n>0?"+":""}{fmt(n,d)} {unit}</td><td><span className={`trend ${trend==="Stable"?"stable":"warn"}`}>● {trend}</span></td></tr>})}</tbody></table></div>;
- const trends=<MiniLineChart series={[{name:"Oil pressure residual (kPa)",values:(history.oil_pressure??[]).map(v=>v*100-e.oil_pressure*100),color:"#0d72f4"},{name:"CHT residual (°C)",values:(history.cht??[]).map(v=>v-e.cht),color:"#8b35ee"},{name:"Vibration residual ×100",values:(history.vibration??[]).map(v=>(v-e.vibration)*100),color:"#ff7a00"}]} labels={["-90s","-75s","-60s","-45s","-30s","-15s","now"]}/>;
- return <div className="ref-page digital-page">
-  <PageHeader title="Digital Twin" subtitle={`${twin.engine_id} · synchronized engine state, expected behavior, residuals and temporal intelligence`}/>
-  <div className="ref-tabs">{[["overview","State Overview"],["expected","Expected Model"],["residuals","Residuals"],["trends","Trends"],["model","Model Details"]].map(([id,label])=><button key={id} className={tab===id?"active":""} onClick={()=>setTab(id as Tab)}>{label}</button>)}</div>
-  {tab==="overview"&&<><div className="dt-top-grid">
-   <Panel><PanelTitle title="Engine Operating State"/><div className="state-list"><div><Gauge/><span>RPM</span><b>{fmt(t.rpm,0)} rpm</b></div><div><Activity/><span>Throttle</span><b>{fmt(t.throttle,1)} %</b></div><div><Mountain/><span>Altitude</span><b>{fmt(t.altitude,0)} m</b></div><div><Thermometer/><span>Ambient Temp</span><b>{fmt(t.ambient_temperature,1)} °C</b></div><div><Fuel/><span>Fuel Flow</span><b>{fmt(t.fuel_flow,2)} L/h</b></div><div><ShieldCheck/><span>Operating Hours</span><b>{fmt(t.operating_hours,2)} h</b></div></div></Panel>
-   <Panel className="blueprint-panel"><div className="blueprint-stage"><EngineTwin focus="all" autoRotate/></div></Panel>
-   <Panel><PanelTitle title="Twin Status"/><div className="twin-status"><div className="sync"><ShieldCheck/><b>Synchronized</b></div><div><Clock3/><span>Last Update</span><b>{new Date(twin.timestamp).toLocaleTimeString([],{hour12:false})}</b><small>Live stream</small></div><div><Activity/><span>Model Type</span><b>Hybrid Physics + AI</b></div><div><ShieldCheck/><span>Data Quality</span><b>{fmt(twin.confidence.data_quality,1)}%</b></div><div><Gauge/><span>Engine ID</span><b>{twin.engine_id}</b></div></div></Panel>
-  </div><div className="dt-bottom-grid"><Panel><PanelTitle title="Actual vs Expected"/>{table}</Panel><Panel><PanelTitle title="Residual Trends" right={<StatusPill tone="blue">Last 90 samples</StatusPill>}/>{trends}</Panel></div></>}
-  {tab==="expected"&&<div className="tab-stack"><Panel><PanelTitle title="Expected Healthy State" subtitle="Context-aware baseline generated from current RPM, load, altitude and temperature"/><div className="engineering-grid">{rows.map(([name,unit,a,x,res,d])=><EngineeringReadout key={name} label={name} value={fmt(x,d)} unit={unit} expected={`Actual ${fmt(a,d)} ${unit}`} residual={`${Number(res)>=0?"+":""}${fmt(res,d)} ${unit}`}/>)}</div></Panel><Panel><PanelTitle title="Operating Context"/><div className="state-list context-grid"><div><Gauge/><span>RPM input</span><b>{fmt(t.rpm,0)} rpm</b></div><div><Activity/><span>Throttle input</span><b>{fmt(t.throttle,1)}%</b></div><div><Mountain/><span>Altitude input</span><b>{fmt(t.altitude,0)} m</b></div><div><Thermometer/><span>Ambient input</span><b>{fmt(t.ambient_temperature,1)} °C</b></div></div></Panel></div>}
-  {tab==="residuals"&&<div className="tab-stack"><Panel><PanelTitle title="Current Residual Vector" subtitle="Exact difference between observed and expected engine behavior"/><div className="engineering-grid">{rows.map(([name,unit,a,x,res,d])=><EngineeringReadout key={name} label={name} value={`${Number(res)>=0?"+":""}${fmt(res,d)}`} unit={unit} expected={`${fmt(x,d)} ${unit}`} residual={`actual ${fmt(a,d)} ${unit}`} tone={Math.abs(Number(res))>(name==="Oil Pressure"?25:name==="CHT"?15:name==="Vibration"?.1:10)?"orange":"blue"}/>)}</div></Panel><Panel><PanelTitle title="Residual Table"/>{table}</Panel></div>}
-  {tab==="trends"&&<div className="tab-stack"><Panel><PanelTitle title="Residual Trend History" subtitle="Recent synchronized deviation history"/>{trends}</Panel><Panel><PanelTitle title="Rates of Change"/><div className="engineering-grid"><EngineeringReadout label="Oil-pressure rate" value={fmt(tr.oil_pressure_per_min*100,2)} unit="kPa/min"/><EngineeringReadout label="Oil-temperature rate" value={fmt(tr.oil_temperature_per_min,2)} unit="°C/min"/><EngineeringReadout label="CHT rate" value={fmt(tr.cht_per_min,2)} unit="°C/min"/><EngineeringReadout label="EGT rate" value={fmt(tr.egt_per_min,2)} unit="°C/min"/><EngineeringReadout label="Vibration rate" value={fmt(tr.vibration_per_min,4)} unit="g/min"/><EngineeringReadout label="Health trend" value={fmt(tr.health_index_per_min,2)} unit="points/min"/></div></Panel></div>}
-  {tab==="model"&&<div className="tab-stack"><Panel><PanelTitle title="Twin Model Details"/><div className="model-detail-grid"><div><span>Physics model</span><b>{pretty(twin.twin_meta?.physics_model??"operating-condition healthy reference")}</b></div><div><span>AI runtime</span><b>{pretty(twin.ai.model_state)}</b></div><div><span>Telemetry source</span><b>{pretty(twin.twin_meta?.telemetry_source??"live simulator")}</b></div><div><span>Validation scope</span><b>{pretty(twin.ai.validation_scope??twin.twin_meta?.validation_scope??"engineering demonstrator")}</b></div><div><span>RUL estimate</span><b>{fmt(twin.ai.rul_hours,2)} h</b></div><div><span>RUL interval</span><b>{twin.ai.rul_interval_hours?`${fmt(twin.ai.rul_interval_hours.lower,2)}–${fmt(twin.ai.rul_interval_hours.upper,2)} h`:"--"}</b></div><div><span>Physics agreement</span><b>{fmt(twin.confidence.physics_agreement,1)}%</b></div><div><span>Decision confidence</span><b>{fmt(twin.confidence.decision,1)}%</b></div></div></Panel></div>}
- </div>
+type Tab = "overview" | "expected" | "residuals" | "trends" | "model";
+export default function DigitalTwinDeck() {
+  const twin = useTwinStore((s) => s.twin),
+    history = useTwinStore((s) => s.history),
+    [tab, setTab] = useState<Tab>("overview");
+  if (!twin) return <div className="empty-screen">Waiting for synchronized telemetry…</div>;
+  const t = twin.telemetry,
+    e = twin.expected,
+    r = twin.residuals,
+    tr = twin.trends;
+  const rows = [
+    ["CHT", "°C", t.cht, e.cht, r.cht_residual, 1],
+    ["EGT", "°C", t.egt, e.egt, r.egt_residual, 1],
+    ["Oil Pressure", "kPa", t.oil_pressure * 100, e.oil_pressure * 100, r.oil_pressure_residual * 100, 1],
+    ["Oil Temperature", "°C", t.oil_temperature, e.oil_temperature, r.oil_temperature_residual, 1],
+    ["Fuel Flow", "L/h", t.fuel_flow, e.fuel_flow, r.fuel_flow_residual, 2],
+    ["Vibration", "g", t.vibration, e.vibration, r.vibration_residual, 3],
+    ["Battery Voltage", "V", t.battery_voltage, e.battery_voltage, r.battery_voltage_residual, 2],
+    ["Alternator Voltage", "V", t.alternator_voltage, e.alternator_voltage, r.alternator_voltage_residual, 2],
+  ] as const;
+  const table = (
+    <div className="ref-table-wrap">
+      <table className="ref-table">
+        <thead>
+          <tr>
+            <th>Parameter</th>
+            <th>Actual</th>
+            <th>Expected</th>
+            <th>Residual</th>
+            <th>Trend</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(([name, unit, a, x, res, d]) => {
+            const n = Number(res),
+              threshold = name === "Oil Pressure" ? 10 : name === "Vibration" ? 0.02 : 3,
+              trend = Math.abs(n) < threshold ? "Stable" : n > 0 ? "Rising" : "Falling";
+            return (
+              <tr key={name}>
+                <td>{name}</td>
+                <td>
+                  <b>
+                    {fmt(a, d)} {unit}
+                  </b>
+                </td>
+                <td>
+                  {fmt(x, d)} {unit}
+                </td>
+                <td className={n > 0 ? "res-pos" : n < 0 ? "res-neg" : ""}>
+                  {n > 0 ? "+" : ""}
+                  {fmt(n, d)} {unit}
+                </td>
+                <td>
+                  <span className={`trend ${trend === "Stable" ? "stable" : "warn"}`}>● {trend}</span>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+  const trends = (
+    <MiniLineChart
+      series={[
+        {
+          name: "Oil pressure residual (kPa)",
+          values: (history.oil_pressure ?? []).map((v) => v * 100 - e.oil_pressure * 100),
+          color: "#0d72f4",
+        },
+        { name: "CHT residual (°C)", values: (history.cht ?? []).map((v) => v - e.cht), color: "#8b35ee" },
+        {
+          name: "Vibration residual ×100",
+          values: (history.vibration ?? []).map((v) => (v - e.vibration) * 100),
+          color: "#ff7a00",
+        },
+      ]}
+      labels={["-90s", "-75s", "-60s", "-45s", "-30s", "-15s", "now"]}
+    />
+  );
+  return (
+    <div className="ref-page digital-page">
+      <PageHeader
+        title="Digital Twin"
+        subtitle={`${twin.engine_id} · synchronized engine state, expected behavior, residuals and temporal intelligence`}
+      />
+      <div className="ref-tabs">
+        {[
+          ["overview", "State Overview"],
+          ["expected", "Expected Model"],
+          ["residuals", "Residuals"],
+          ["trends", "Trends"],
+          ["model", "Model Details"],
+        ].map(([id, label]) => (
+          <button key={id} className={tab === id ? "active" : ""} onClick={() => setTab(id as Tab)}>
+            {label}
+          </button>
+        ))}
+      </div>
+      {tab === "overview" && (
+        <>
+          <div className="dt-top-grid">
+            <Panel>
+              <PanelTitle title="Engine Operating State" />
+              <div className="state-list">
+                <div>
+                  <Gauge />
+                  <span>RPM</span>
+                  <b>{fmt(t.rpm, 0)} rpm</b>
+                </div>
+                <div>
+                  <Activity />
+                  <span>Throttle</span>
+                  <b>{fmt(t.throttle, 1)} %</b>
+                </div>
+                <div>
+                  <Mountain />
+                  <span>Altitude</span>
+                  <b>{fmt(t.altitude, 0)} m</b>
+                </div>
+                <div>
+                  <Thermometer />
+                  <span>Ambient Temp</span>
+                  <b>{fmt(t.ambient_temperature, 1)} °C</b>
+                </div>
+                <div>
+                  <Fuel />
+                  <span>Fuel Flow</span>
+                  <b>{fmt(t.fuel_flow, 2)} L/h</b>
+                </div>
+                <div>
+                  <ShieldCheck />
+                  <span>Operating Hours</span>
+                  <b>{fmt(t.operating_hours, 2)} h</b>
+                </div>
+              </div>
+            </Panel>
+            <Panel className="blueprint-panel">
+              <div className="blueprint-stage">
+                <EngineTwin focus="all" autoRotate />
+              </div>
+            </Panel>
+            <Panel>
+              <PanelTitle title="Twin Status" />
+              <div className="twin-status">
+                <div className="sync">
+                  <ShieldCheck />
+                  <b>Synchronized</b>
+                </div>
+                <div>
+                  <Clock3 />
+                  <span>Last Update</span>
+                  <b>{new Date(twin.timestamp).toLocaleTimeString([], { hour12: false })}</b>
+                  <small>Live stream</small>
+                </div>
+                <div>
+                  <Activity />
+                  <span>Model Type</span>
+                  <b>Hybrid Physics + AI</b>
+                </div>
+                <div>
+                  <ShieldCheck />
+                  <span>Data Quality</span>
+                  <b>{fmt(twin.confidence.data_quality, 1)}%</b>
+                </div>
+                <div>
+                  <Gauge />
+                  <span>Engine ID</span>
+                  <b>{twin.engine_id}</b>
+                </div>
+              </div>
+            </Panel>
+          </div>
+          <div className="dt-bottom-grid">
+            <Panel>
+              <PanelTitle title="Actual vs Expected" />
+              {table}
+            </Panel>
+            <Panel>
+              <PanelTitle
+                title="Residual Trends"
+                right={<StatusPill tone="blue">Last 90 samples</StatusPill>}
+              />
+              {trends}
+            </Panel>
+          </div>
+        </>
+      )}
+      {tab === "expected" && (
+        <div className="tab-stack">
+          <Panel>
+            <PanelTitle
+              title="Expected Healthy State"
+              subtitle="Context-aware baseline generated from current RPM, load, altitude and temperature"
+            />
+            <div className="engineering-grid">
+              {rows.map(([name, unit, a, x, res, d]) => (
+                <EngineeringReadout
+                  key={name}
+                  label={name}
+                  value={fmt(x, d)}
+                  unit={unit}
+                  expected={`Actual ${fmt(a, d)} ${unit}`}
+                  residual={`${Number(res) >= 0 ? "+" : ""}${fmt(res, d)} ${unit}`}
+                />
+              ))}
+            </div>
+          </Panel>
+          <Panel>
+            <PanelTitle title="Operating Context" />
+            <div className="state-list context-grid">
+              <div>
+                <Gauge />
+                <span>RPM input</span>
+                <b>{fmt(t.rpm, 0)} rpm</b>
+              </div>
+              <div>
+                <Activity />
+                <span>Throttle input</span>
+                <b>{fmt(t.throttle, 1)}%</b>
+              </div>
+              <div>
+                <Mountain />
+                <span>Altitude input</span>
+                <b>{fmt(t.altitude, 0)} m</b>
+              </div>
+              <div>
+                <Thermometer />
+                <span>Ambient input</span>
+                <b>{fmt(t.ambient_temperature, 1)} °C</b>
+              </div>
+            </div>
+          </Panel>
+        </div>
+      )}
+      {tab === "residuals" && (
+        <div className="tab-stack">
+          <Panel>
+            <PanelTitle
+              title="Current Residual Vector"
+              subtitle="Exact difference between observed and expected engine behavior"
+            />
+            <div className="engineering-grid">
+              {rows.map(([name, unit, a, x, res, d]) => (
+                <EngineeringReadout
+                  key={name}
+                  label={name}
+                  value={`${Number(res) >= 0 ? "+" : ""}${fmt(res, d)}`}
+                  unit={unit}
+                  expected={`${fmt(x, d)} ${unit}`}
+                  residual={`actual ${fmt(a, d)} ${unit}`}
+                  tone={
+                    Math.abs(Number(res)) >
+                    (name === "Oil Pressure" ? 25 : name === "CHT" ? 15 : name === "Vibration" ? 0.1 : 10)
+                      ? "orange"
+                      : "blue"
+                  }
+                />
+              ))}
+            </div>
+          </Panel>
+          <Panel>
+            <PanelTitle title="Residual Table" />
+            {table}
+          </Panel>
+        </div>
+      )}
+      {tab === "trends" && (
+        <div className="tab-stack">
+          <Panel>
+            <PanelTitle title="Residual Trend History" subtitle="Recent synchronized deviation history" />
+            {trends}
+          </Panel>
+          <Panel>
+            <PanelTitle title="Rates of Change" />
+            <div className="engineering-grid">
+              <EngineeringReadout
+                label="Oil-pressure rate"
+                value={fmt(tr.oil_pressure_per_min * 100, 2)}
+                unit="kPa/min"
+              />
+              <EngineeringReadout
+                label="Oil-temperature rate"
+                value={fmt(tr.oil_temperature_per_min, 2)}
+                unit="°C/min"
+              />
+              <EngineeringReadout label="CHT rate" value={fmt(tr.cht_per_min, 2)} unit="°C/min" />
+              <EngineeringReadout label="EGT rate" value={fmt(tr.egt_per_min, 2)} unit="°C/min" />
+              <EngineeringReadout label="Vibration rate" value={fmt(tr.vibration_per_min, 4)} unit="g/min" />
+              <EngineeringReadout
+                label="Health trend"
+                value={fmt(tr.health_index_per_min, 2)}
+                unit="points/min"
+              />
+            </div>
+          </Panel>
+        </div>
+      )}
+      {tab === "model" && (
+        <div className="tab-stack">
+          <Panel>
+            <PanelTitle title="Twin Model Details" />
+            <div className="model-detail-grid">
+              <div>
+                <span>Physics model</span>
+                <b>{pretty(twin.twin_meta?.physics_model ?? "operating-condition healthy reference")}</b>
+              </div>
+              <div>
+                <span>AI runtime</span>
+                <b>{pretty(twin.ai.model_state)}</b>
+              </div>
+              <div>
+                <span>Telemetry source</span>
+                <b>{pretty(twin.twin_meta?.telemetry_source ?? "live simulator")}</b>
+              </div>
+              <div>
+                <span>Validation scope</span>
+                <b>
+                  {pretty(
+                    twin.ai.validation_scope ??
+                      twin.twin_meta?.validation_scope ??
+                      "engineering demonstrator",
+                  )}
+                </b>
+              </div>
+              <div>
+                <span>RUL estimate</span>
+                <b>{fmt(twin.ai.rul_hours, 2)} h</b>
+              </div>
+              <div>
+                <span>RUL interval</span>
+                <b>
+                  {twin.ai.rul_interval_hours
+                    ? `${fmt(twin.ai.rul_interval_hours.lower, 2)}–${fmt(twin.ai.rul_interval_hours.upper, 2)} h`
+                    : "--"}
+                </b>
+              </div>
+              <div>
+                <span>Physics agreement</span>
+                <b>{fmt(twin.confidence.physics_agreement, 1)}%</b>
+              </div>
+              <div>
+                <span>Decision confidence</span>
+                <b>{fmt(twin.confidence.decision, 1)}%</b>
+              </div>
+            </div>
+          </Panel>
+        </div>
+      )}
+    </div>
+  );
 }

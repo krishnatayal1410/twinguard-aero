@@ -1,5 +1,4 @@
 from __future__ import annotations
-from typing import Dict
 
 
 class PhysicsEngine:
@@ -13,7 +12,7 @@ class PhysicsEngine:
 
     MODEL_ID = "generic-aero-piston-surrogate-v2"
 
-    def expected(self, t: dict) -> Dict[str, float]:
+    def expected(self, t: dict) -> dict[str, float]:
         rpm = float(t["rpm"])
         throttle = float(t["throttle"])
         altitude = float(t["altitude"])
@@ -48,7 +47,7 @@ class PhysicsEngine:
             "injection_timing": injection_timing,
         }
 
-    def residuals(self, t: dict, expected: dict) -> Dict[str, float]:
+    def residuals(self, t: dict, expected: dict) -> dict[str, float]:
         channels = (
             "cht",
             "egt",

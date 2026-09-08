@@ -46,7 +46,9 @@ def main():
         raise SystemExit(1)
 
     print(f"TwinGuard domain consistency: PASS ({checked} runtime source files checked)")
-    print("Runtime remains aligned to SIH26054 aero-piston scope and no banned hard-coded mission claims were found.")
+    print(
+        "Runtime remains aligned to SIH26054 aero-piston scope and no banned hard-coded mission claims were found."
+    )
 
 
 if __name__ == "__main__":

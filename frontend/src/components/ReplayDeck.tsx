@@ -1,34 +1,342 @@
-import{CircleStop,Pause,Play,RotateCcw,SkipForward}from"lucide-react";
-import{useEffect,useMemo,useState}from"react";
-import{endReplay,getReplay,getReplaySamples,listReplay,startReplay}from"../services/twinApi";
-import{useTwinStore}from"../store/twinStore";
-import type{ReplayMission,ReplaySample}from"../types/twin";
-import{fmt}from"./ui";
-import{EngineeringReadout,MiniLineChart,PageHeader,Panel,PanelTitle}from"./ReferenceUI";
+import { CircleStop, Pause, Play, RotateCcw, SkipForward } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { endReplay, getReplay, getReplaySamples, listReplay, startReplay } from "../services/twinApi";
+import { useTwinStore } from "../store/twinStore";
+import type { ReplayMission, ReplaySample } from "../types/twin";
+import { fmt } from "./ui";
+import { EngineeringReadout, MiniLineChart, PageHeader, Panel, PanelTitle } from "./ReferenceUI";
 
-export default function ReplayDeck(){
- const missions=useTwinStore(s=>s.missions),setMissions=useTwinStore(s=>s.setMissions),[playing,setPlaying]=useState(false),[progress,setProgress]=useState(0),[recording,setRecording]=useState(false),[busy,setBusy]=useState(false),[speed,setSpeed]=useState(1),[selected,setSelected]=useState<ReplayMission>(),[samples,setSamples]=useState<ReplaySample[]>([]),[notice,setNotice]=useState("");
- const loadSamples=async(id:number)=>{const rows=await getReplaySamples(id);setSamples(rows);setProgress(0);setPlaying(false)};
- useEffect(()=>{listReplay().then(async m=>{setMissions(m);if(m[0]){setSelected(m[0]);await loadSamples(m[0].id)}}).catch(e=>setNotice(e?.message??"Unable to load mission recordings"))},[setMissions]);
- useEffect(()=>{if(!playing)return;const id=setInterval(()=>setProgress(v=>Math.min(100,v+.18*speed)),250);return()=>clearInterval(id)},[playing,speed]);
- useEffect(()=>{if(progress>=100)setPlaying(false)},[progress]);
- const start=async()=>{setBusy(true);setNotice("");try{const m=await startReplay(`TwinGuard Mission ${new Date().toLocaleString()}`);setRecording(true);setSelected(m);setSamples([]);setProgress(0);setNotice("Mission recording started. Live Twin samples are now being persisted.")}catch(e:any){setNotice(e?.message??"Unable to start recording")}finally{setBusy(false)}},stop=async()=>{setBusy(true);setNotice("");try{const m=await endReplay();setRecording(false);const all=await listReplay();setMissions(all);const chosen=all.find(x=>x.id===m.id)??m;setSelected(chosen);await loadSamples(chosen.id);setProgress(100);setNotice("Mission recording completed and persisted.")}catch(e:any){setNotice(e?.message??"Unable to end recording")}finally{setBusy(false)}};
- const choose=async(id:number)=>{setBusy(true);setNotice("");try{const m=await getReplay(id);setSelected(m);await loadSamples(id)}catch(e:any){setNotice(e?.message??"Unable to load recording")}finally{setBusy(false)}};
- const summary=(selected?.summary??{}) as Record<string,any>,events=(summary.events??[]) as Array<Record<string,any>>;
- const durationSeconds=samples.length>1?Math.max(0,(Date.parse(samples[samples.length-1].timestamp)-Date.parse(samples[0].timestamp))/1000):Number(summary.duration_seconds??0),elapsed=Math.round(progress/100*durationSeconds);
- const formatTime=(s:number)=>`${String(Math.floor(s/3600)).padStart(2,"0")}:${String(Math.floor((s%3600)/60)).padStart(2,"0")}:${String(Math.floor(s%60)).padStart(2,"0")}`;
- const index=samples.length?Math.min(samples.length-1,Math.max(0,Math.round(progress/100*(samples.length-1)))):0,current=samples[index];
- const series=useMemo(()=>({health:samples.map(x=>x.health),rul:samples.map(x=>x.rul),cht:samples.map(x=>x.cht),oil:samples.map(x=>x.oil_pressure*100),vibration:samples.map(x=>x.vibration)}),[samples]);
- const markerEvents=events.length?events.slice(0,12):selected?[{type:"NO_STORED_EVENTS",timestamp:selected.started_at,severity:"info",message:"This recording contains no detected state-transition events."}]:[];
- return <div className="ref-page replay-ref-page"><PageHeader title="Mission Replay" subtitle="Persisted mission recordings, actual stored Twin samples and synchronized event inspection"/>
-  {notice&&<div className="settings-notice">{notice}</div>}
-  <div className="replay-controls-row"><Panel className="replay-controls"><PanelTitle title="Playback Controls" right={<select value={selected?.id??""} onChange={e=>choose(Number(e.target.value))} disabled={busy}><option value="">Select recording</option>{missions.map(m=><option value={m.id} key={m.id}>#{m.id} · {m.label}</option>)}</select>}/><div className="player-controls"><button title="Play" onClick={()=>setPlaying(true)} disabled={!samples.length}><Play/></button><button title="Pause" onClick={()=>setPlaying(false)}><Pause/></button><button title="Skip forward 10%" onClick={()=>setProgress(v=>Math.min(100,v+10))} disabled={!samples.length}><SkipForward/></button><button title="Restart" onClick={()=>{setProgress(0);setPlaying(false)}} disabled={!samples.length}><RotateCcw/></button><input className="replay-range" type="range" min="0" max="100" step="0.1" value={progress} onChange={e=>{setProgress(Number(e.target.value));setPlaying(false)}} disabled={!samples.length}/><strong>{formatTime(elapsed)} / {formatTime(durationSeconds)}</strong><select value={speed} onChange={e=>setSpeed(Number(e.target.value))}><option value={0.5}>0.5×</option><option value={1}>1×</option><option value={2}>2×</option><option value={4}>4×</option></select><button className="record-btn" disabled={busy||recording} onClick={start}>{busy?"Working…":"Record"}</button><button className="stop-btn" disabled={busy||!recording} onClick={stop}><CircleStop size={14}/> End</button></div></Panel>
-   <Panel><PanelTitle title="Recording Status"/><div className="replay-status-grid"><div><span>Recording</span><b className={recording?"red-text":"green-text"}>{recording?"ACTIVE":"IDLE"}</b></div><div><span>Saved missions</span><b>{missions.length}</b></div><div><span>Stored samples</span><b>{samples.length}</b></div><div><span>Playback</span><b>{fmt(progress,1)}%</b></div></div></Panel>
-  </div>
-  <Panel><PanelTitle title="Playback Engineering Snapshot" subtitle="Exact persisted values at the selected historical sample"/><div className="engineering-grid"><EngineeringReadout label="Health Index" value={current?fmt(current.health,1):"--"} unit="/100"/><EngineeringReadout label="RUL" value={current?fmt(current.rul,2):"--"} unit="h"/><EngineeringReadout label="CHT" value={current?fmt(current.cht,1):"--"} unit="°C"/><EngineeringReadout label="Oil Pressure" value={current?fmt(current.oil_pressure*100,1):"--"} unit="kPa"/><EngineeringReadout label="Vibration" value={current?fmt(current.vibration,3):"--"} unit="g"/><EngineeringReadout label="Fault" value={current?.fault??"--"}/><EngineeringReadout label="Maintenance" value={current?.maintenance??"--"}/><EngineeringReadout label="Timestamp" value={current?new Date(current.timestamp).toLocaleTimeString([],{hour12:false}):"--"}/></div></Panel>
-  <div className="replay-main-grid">
-   <Panel><PanelTitle title="Persisted Telemetry Timeline" subtitle="Charts are generated from the selected mission's stored samples, not the current live browser session."/><div className="stacked-charts"><div><b>Health<br/><small>/100</small></b><MiniLineChart series={[{name:"Health",values:series.health,color:"#1479f8"}]}/></div><div><b>RUL<br/><small>(h)</small></b><MiniLineChart series={[{name:"RUL",values:series.rul,color:"#00a66a"}]}/></div><div><b>CHT<br/><small>(°C)</small></b><MiniLineChart series={[{name:"CHT",values:series.cht,color:"#ff7a00"}]}/></div><div><b>Oil Pressure<br/><small>(kPa)</small></b><MiniLineChart series={[{name:"Oil Pressure",values:series.oil,color:"#ff3a36"}]}/></div><div><b>Vibration<br/><small>(g)</small></b><MiniLineChart series={[{name:"Vibration",values:series.vibration,color:"#8a38eb"}]}/></div></div></Panel>
-   <Panel><PanelTitle title="Event Details" subtitle={selected?`${selected.label} · ${selected.status}`:"No stored recording selected"}/><div className="event-details">{markerEvents.length?markerEvents.map((e,i)=><div key={`${e.timestamp}-${i}`}><i className={String(e.severity==="critical"?"red":e.severity==="warning"?"orange":"blue")}/><div><time>{e.timestamp?new Date(String(e.timestamp)).toLocaleTimeString([],{hour12:false}):`event ${i+1}`}</time><b>{String(e.type??"Event")}</b><p>{String(e.message??"Recorded TwinGuard mission event")}</p></div></div>):<p>No mission recording selected.</p>}</div></Panel>
-  </div>
- </div>
+export default function ReplayDeck() {
+  const missions = useTwinStore((s) => s.missions),
+    setMissions = useTwinStore((s) => s.setMissions),
+    [playing, setPlaying] = useState(false),
+    [progress, setProgress] = useState(0),
+    [recording, setRecording] = useState(false),
+    [busy, setBusy] = useState(false),
+    [speed, setSpeed] = useState(1),
+    [selected, setSelected] = useState<ReplayMission>(),
+    [samples, setSamples] = useState<ReplaySample[]>([]),
+    [notice, setNotice] = useState("");
+  const loadSamples = async (id: number) => {
+    const rows = await getReplaySamples(id);
+    setSamples(rows);
+    setProgress(0);
+    setPlaying(false);
+  };
+  useEffect(() => {
+    listReplay()
+      .then(async (m) => {
+        setMissions(m);
+        if (m[0]) {
+          setSelected(m[0]);
+          await loadSamples(m[0].id);
+        }
+      })
+      .catch((e) => setNotice(e?.message ?? "Unable to load mission recordings"));
+  }, [setMissions]);
+  useEffect(() => {
+    if (!playing) return;
+    const id = setInterval(() => setProgress((v) => Math.min(100, v + 0.18 * speed)), 250);
+    return () => clearInterval(id);
+  }, [playing, speed]);
+  useEffect(() => {
+    if (progress >= 100) setPlaying(false);
+  }, [progress]);
+  const start = async () => {
+      setBusy(true);
+      setNotice("");
+      try {
+        const m = await startReplay(`TwinGuard Mission ${new Date().toLocaleString()}`);
+        setRecording(true);
+        setSelected(m);
+        setSamples([]);
+        setProgress(0);
+        setNotice("Mission recording started. Live Twin samples are now being persisted.");
+      } catch (e: any) {
+        setNotice(e?.message ?? "Unable to start recording");
+      } finally {
+        setBusy(false);
+      }
+    },
+    stop = async () => {
+      setBusy(true);
+      setNotice("");
+      try {
+        const m = await endReplay();
+        setRecording(false);
+        const all = await listReplay();
+        setMissions(all);
+        const chosen = all.find((x) => x.id === m.id) ?? m;
+        setSelected(chosen);
+        await loadSamples(chosen.id);
+        setProgress(100);
+        setNotice("Mission recording completed and persisted.");
+      } catch (e: any) {
+        setNotice(e?.message ?? "Unable to end recording");
+      } finally {
+        setBusy(false);
+      }
+    };
+  const choose = async (id: number) => {
+    setBusy(true);
+    setNotice("");
+    try {
+      const m = await getReplay(id);
+      setSelected(m);
+      await loadSamples(id);
+    } catch (e: any) {
+      setNotice(e?.message ?? "Unable to load recording");
+    } finally {
+      setBusy(false);
+    }
+  };
+  const summary = (selected?.summary ?? {}) as Record<string, any>,
+    events = (summary.events ?? []) as Array<Record<string, any>>;
+  const durationSeconds =
+      samples.length > 1
+        ? Math.max(
+            0,
+            (Date.parse(samples[samples.length - 1].timestamp) - Date.parse(samples[0].timestamp)) / 1000,
+          )
+        : Number(summary.duration_seconds ?? 0),
+    elapsed = Math.round((progress / 100) * durationSeconds);
+  const formatTime = (s: number) =>
+    `${String(Math.floor(s / 3600)).padStart(2, "0")}:${String(Math.floor((s % 3600) / 60)).padStart(2, "0")}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+  const index = samples.length
+      ? Math.min(samples.length - 1, Math.max(0, Math.round((progress / 100) * (samples.length - 1))))
+      : 0,
+    current = samples[index];
+  const series = useMemo(
+    () => ({
+      health: samples.map((x) => x.health),
+      rul: samples.map((x) => x.rul),
+      cht: samples.map((x) => x.cht),
+      oil: samples.map((x) => x.oil_pressure * 100),
+      vibration: samples.map((x) => x.vibration),
+    }),
+    [samples],
+  );
+  const markerEvents = events.length
+    ? events.slice(0, 12)
+    : selected
+      ? [
+          {
+            type: "NO_STORED_EVENTS",
+            timestamp: selected.started_at,
+            severity: "info",
+            message: "This recording contains no detected state-transition events.",
+          },
+        ]
+      : [];
+  return (
+    <div className="ref-page replay-ref-page">
+      <PageHeader
+        title="Mission Replay"
+        subtitle="Persisted mission recordings, actual stored Twin samples and synchronized event inspection"
+      />
+      {notice && <div className="settings-notice">{notice}</div>}
+      <div className="replay-controls-row">
+        <Panel className="replay-controls">
+          <PanelTitle
+            title="Playback Controls"
+            right={
+              <select
+                value={selected?.id ?? ""}
+                onChange={(e) => choose(Number(e.target.value))}
+                disabled={busy}
+              >
+                <option value="">Select recording</option>
+                {missions.map((m) => (
+                  <option value={m.id} key={m.id}>
+                    #{m.id} · {m.label}
+                  </option>
+                ))}
+              </select>
+            }
+          />
+          <div className="player-controls">
+            <button title="Play" onClick={() => setPlaying(true)} disabled={!samples.length}>
+              <Play />
+            </button>
+            <button title="Pause" onClick={() => setPlaying(false)}>
+              <Pause />
+            </button>
+            <button
+              title="Skip forward 10%"
+              onClick={() => setProgress((v) => Math.min(100, v + 10))}
+              disabled={!samples.length}
+            >
+              <SkipForward />
+            </button>
+            <button
+              title="Restart"
+              onClick={() => {
+                setProgress(0);
+                setPlaying(false);
+              }}
+              disabled={!samples.length}
+            >
+              <RotateCcw />
+            </button>
+            <input
+              className="replay-range"
+              type="range"
+              min="0"
+              max="100"
+              step="0.1"
+              value={progress}
+              onChange={(e) => {
+                setProgress(Number(e.target.value));
+                setPlaying(false);
+              }}
+              disabled={!samples.length}
+            />
+            <strong>
+              {formatTime(elapsed)} / {formatTime(durationSeconds)}
+            </strong>
+            <select value={speed} onChange={(e) => setSpeed(Number(e.target.value))}>
+              <option value={0.5}>0.5×</option>
+              <option value={1}>1×</option>
+              <option value={2}>2×</option>
+              <option value={4}>4×</option>
+            </select>
+            <button className="record-btn" disabled={busy || recording} onClick={start}>
+              {busy ? "Working…" : "Record"}
+            </button>
+            <button className="stop-btn" disabled={busy || !recording} onClick={stop}>
+              <CircleStop size={14} /> End
+            </button>
+          </div>
+        </Panel>
+        <Panel>
+          <PanelTitle title="Recording Status" />
+          <div className="replay-status-grid">
+            <div>
+              <span>Recording</span>
+              <b className={recording ? "red-text" : "green-text"}>{recording ? "ACTIVE" : "IDLE"}</b>
+            </div>
+            <div>
+              <span>Saved missions</span>
+              <b>{missions.length}</b>
+            </div>
+            <div>
+              <span>Stored samples</span>
+              <b>{samples.length}</b>
+            </div>
+            <div>
+              <span>Playback</span>
+              <b>{fmt(progress, 1)}%</b>
+            </div>
+          </div>
+        </Panel>
+      </div>
+      <Panel>
+        <PanelTitle
+          title="Playback Engineering Snapshot"
+          subtitle="Exact persisted values at the selected historical sample"
+        />
+        <div className="engineering-grid">
+          <EngineeringReadout
+            label="Health Index"
+            value={current ? fmt(current.health, 1) : "--"}
+            unit="/100"
+          />
+          <EngineeringReadout label="RUL" value={current ? fmt(current.rul, 2) : "--"} unit="h" />
+          <EngineeringReadout label="CHT" value={current ? fmt(current.cht, 1) : "--"} unit="°C" />
+          <EngineeringReadout
+            label="Oil Pressure"
+            value={current ? fmt(current.oil_pressure * 100, 1) : "--"}
+            unit="kPa"
+          />
+          <EngineeringReadout label="Vibration" value={current ? fmt(current.vibration, 3) : "--"} unit="g" />
+          <EngineeringReadout label="Fault" value={current?.fault ?? "--"} />
+          <EngineeringReadout label="Maintenance" value={current?.maintenance ?? "--"} />
+          <EngineeringReadout
+            label="Timestamp"
+            value={current ? new Date(current.timestamp).toLocaleTimeString([], { hour12: false }) : "--"}
+          />
+        </div>
+      </Panel>
+      <div className="replay-main-grid">
+        <Panel>
+          <PanelTitle
+            title="Persisted Telemetry Timeline"
+            subtitle="Charts are generated from the selected mission's stored samples, not the current live browser session."
+          />
+          <div className="stacked-charts">
+            <div>
+              <b>
+                Health
+                <br />
+                <small>/100</small>
+              </b>
+              <MiniLineChart series={[{ name: "Health", values: series.health, color: "#1479f8" }]} />
+            </div>
+            <div>
+              <b>
+                RUL
+                <br />
+                <small>(h)</small>
+              </b>
+              <MiniLineChart series={[{ name: "RUL", values: series.rul, color: "#00a66a" }]} />
+            </div>
+            <div>
+              <b>
+                CHT
+                <br />
+                <small>(°C)</small>
+              </b>
+              <MiniLineChart series={[{ name: "CHT", values: series.cht, color: "#ff7a00" }]} />
+            </div>
+            <div>
+              <b>
+                Oil Pressure
+                <br />
+                <small>(kPa)</small>
+              </b>
+              <MiniLineChart series={[{ name: "Oil Pressure", values: series.oil, color: "#ff3a36" }]} />
+            </div>
+            <div>
+              <b>
+                Vibration
+                <br />
+                <small>(g)</small>
+              </b>
+              <MiniLineChart series={[{ name: "Vibration", values: series.vibration, color: "#8a38eb" }]} />
+            </div>
+          </div>
+        </Panel>
+        <Panel>
+          <PanelTitle
+            title="Event Details"
+            subtitle={selected ? `${selected.label} · ${selected.status}` : "No stored recording selected"}
+          />
+          <div className="event-details">
+            {markerEvents.length ? (
+              markerEvents.map((e, i) => (
+                <div key={`${e.timestamp}-${i}`}>
+                  <i
+                    className={String(
+                      e.severity === "critical" ? "red" : e.severity === "warning" ? "orange" : "blue",
+                    )}
+                  />
+                  <div>
+                    <time>
+                      {e.timestamp
+                        ? new Date(String(e.timestamp)).toLocaleTimeString([], { hour12: false })
+                        : `event ${i + 1}`}
+                    </time>
+                    <b>{String(e.type ?? "Event")}</b>
+                    <p>{String(e.message ?? "Recorded TwinGuard mission event")}</p>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <p>No mission recording selected.</p>
+            )}
+          </div>
+        </Panel>
+      </div>
+    </div>
+  );
 }

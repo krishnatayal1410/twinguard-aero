@@ -1,16 +1,227 @@
-import{Activity,AlertTriangle,ArrowRight,CheckCircle2,Droplets,Gauge,HeartPulse,Radio,Thermometer,Timer,TrendingDown,Zap}from"lucide-react";import{useTwinStore}from"../store/twinStore";import EngineTwin from"./EngineTwin";import{fmt,pretty}from"./ui";import{MiniLineChart,PageHeader,Panel,PanelTitle,StatusPill}from"./ReferenceUI";
-export default function CommandCenter(){
- const twin=useTwinStore(s=>s.twin),runtime=useTwinStore(s=>s.runtimeValidity),runs=useTwinStore(s=>s.missionRuns),history=useTwinStore(s=>s.history),setView=useTwinStore(s=>s.setView);if(!twin)return <div className="empty-screen">Synchronizing engine telemetry…</div>;
- const t=twin.telemetry,h=twin.health,ai=twin.ai,r=twin.residuals,last=runs.length?runs[runs.length-1].result:undefined,eligible=runtime?.decision_eligible!==false,fault=ai.anomaly?pretty(ai.probable_fault):"No active anomaly",faultTone=ai.anomaly?"orange":"green";
- const metrics=[{label:"Engine health",value:fmt(h.overall,1)+"%",meta:"Hybrid health index",icon:<HeartPulse/>,tone:h.overall<86?"orange":"green"},{label:"Remaining useful life",value:fmt(ai.rul_hours,1)+" h",meta:ai.rul_interval_hours?fmt(ai.rul_interval_hours.lower,0)+"–"+fmt(ai.rul_interval_hours.upper,0)+" h interval":"Engineering estimate",icon:<Timer/>,tone:"blue"},{label:"Mission readiness",value:last?.decision||twin.readiness.label,meta:last?fmt(last.mission_feasibility_index,0)+"% feasibility":twin.readiness.reason,icon:<CheckCircle2/>,tone:eligible?"green":"orange"},{label:"Active diagnosis",value:fault,meta:ai.anomaly?fmt(ai.fault_confidence*100,0)+"% confidence":"All monitored systems nominal",icon:<Zap/>,tone:faultTone}];
- const subs=[["Thermal",h.thermal,fmt(t.cht,1)+" °C"],["Lubrication",h.lubrication,fmt(t.oil_pressure*100,0)+" kPa"],["Mechanical",h.mechanical,fmt(t.vibration,3)+" g"],["Combustion",h.combustion,fmt(t.egt,0)+" °C"],["Electrical",h.electrical,fmt(t.battery_voltage,1)+" V"]];
- return <div className="ref-page command-v4"><PageHeader title="Command Center" subtitle={"Live condition, AI diagnosis and mission readiness for "+twin.engine_id}/>
-  <div className="cc-decision-cards">{metrics.map(m=><Panel key={m.label} className={"decision-card "+m.tone}><div className="decision-icon">{m.icon}</div><div><span>{m.label}</span><b>{m.value}</b><small>{m.meta}</small></div></Panel>)}</div>
-  <div className="cc-command-grid"><Panel className="cc-engine-v4"><PanelTitle title="Interactive Engine Digital Twin" subtitle="Drag to rotate · Scroll to zoom · Use X-ray to locate faults" right={<StatusPill tone={eligible?"green":"orange"}><Radio/> {eligible?"LIVE":"DATA HOLD"}</StatusPill>}/><div className="cc-engine-stage-v4"><EngineTwin compact autoRotate/></div></Panel>
-   <Panel className="cc-intelligence"><PanelTitle icon={<Zap/>} title="AI Decision Brief" subtitle="Current engineering interpretation"/><div className={"ai-condition "+faultTone}>{ai.anomaly?<AlertTriangle/>:<CheckCircle2/>}<div><span>DETECTED CONDITION</span><b>{fault}</b><small>{fmt(ai.fault_confidence*100,0)}% diagnostic confidence</small></div></div><div className="ai-readings"><div><span>Oil pressure residual</span><b>{r.oil_pressure_residual>=0?"+":""}{fmt(r.oil_pressure_residual*100,1)} kPa</b></div><div><span>CHT residual</span><b>{r.cht_residual>=0?"+":""}{fmt(r.cht_residual,1)} °C</b></div><div><span>Vibration residual</span><b>{r.vibration_residual>=0?"+":""}{fmt(r.vibration_residual,3)} g</b></div></div><div className="ai-action"><span>RECOMMENDED ACTION</span><p>{twin.maintenance.reason}</p><small>{eligible?"Decision inputs are fresh and eligible.":"Restore fresh telemetry before operational use."}</small></div><button className="ref-primary full" onClick={()=>setView("diagnostics")}>Open detailed diagnostics <ArrowRight/></button></Panel>
-  </div>
-  <div className="cc-lower-grid"><Panel><PanelTitle icon={<Activity/>} title="Live Telemetry Trends" subtitle="Last 90 synchronized samples"/><MiniLineChart series={[{name:"CHT °C",values:history.cht||[],color:"#1677ff"},{name:"Oil pressure ×100",values:(history.oil_pressure||[]).map(v=>v*100),color:"#20a47b"},{name:"Vibration ×100",values:(history.vibration||[]).map(v=>v*100),color:"#f59e0b"}]} labels={["-90s","-75s","-60s","-45s","-30s","-15s","now"]}/><div className="telemetry-strip"><div><Gauge/><span>RPM</span><b>{fmt(t.rpm,0)}</b></div><div><Thermometer/><span>CHT</span><b>{fmt(t.cht,1)}°C</b></div><div><Droplets/><span>Oil</span><b>{fmt(t.oil_pressure*100,1)} kPa</b></div><div><TrendingDown/><span>Fuel flow</span><b>{fmt(t.fuel_flow,1)} L/h</b></div></div></Panel>
-   <Panel><PanelTitle title="Subsystem Health" subtitle="Select Digital Twin for part-level inspection"/><div className="subsystem-list">{subs.map(([name,value,reading])=><div key={String(name)}><i className={Number(value)<86?"warn":""}/><span>{name}<small>{reading}</small></span><div className="health-bar"><i style={{width:Math.max(2,Number(value))+"%"}}/></div><b>{fmt(Number(value),0)}%</b></div>)}</div><button className="ref-outline full" onClick={()=>setView("digitalTwin")}>Open engineering workbench <ArrowRight/></button></Panel>
-  </div>
- </div>
+import {
+  Activity,
+  AlertTriangle,
+  ArrowRight,
+  CheckCircle2,
+  Droplets,
+  Gauge,
+  HeartPulse,
+  Radio,
+  Thermometer,
+  Timer,
+  TrendingDown,
+  Zap,
+} from "lucide-react";
+import { useTwinStore } from "../store/twinStore";
+import EngineTwin from "./EngineTwin";
+import { fmt, pretty } from "./ui";
+import { MiniLineChart, PageHeader, Panel, PanelTitle, StatusPill } from "./ReferenceUI";
+export default function CommandCenter() {
+  const twin = useTwinStore((s) => s.twin),
+    runtime = useTwinStore((s) => s.runtimeValidity),
+    runs = useTwinStore((s) => s.missionRuns),
+    history = useTwinStore((s) => s.history),
+    setView = useTwinStore((s) => s.setView);
+  if (!twin) return <div className="empty-screen">Synchronizing engine telemetry…</div>;
+  const t = twin.telemetry,
+    h = twin.health,
+    ai = twin.ai,
+    r = twin.residuals,
+    last = runs.length ? runs[runs.length - 1].result : undefined,
+    eligible = runtime?.decision_eligible !== false,
+    fault = ai.anomaly ? pretty(ai.probable_fault) : "No active anomaly",
+    faultTone = ai.anomaly ? "orange" : "green";
+  const metrics = [
+    {
+      label: "Engine health",
+      value: fmt(h.overall, 1) + "%",
+      meta: "Hybrid health index",
+      icon: <HeartPulse />,
+      tone: h.overall < 86 ? "orange" : "green",
+    },
+    {
+      label: "Remaining useful life",
+      value: fmt(ai.rul_hours, 1) + " h",
+      meta: ai.rul_interval_hours
+        ? fmt(ai.rul_interval_hours.lower, 0) + "–" + fmt(ai.rul_interval_hours.upper, 0) + " h interval"
+        : "Engineering estimate",
+      icon: <Timer />,
+      tone: "blue",
+    },
+    {
+      label: "Mission readiness",
+      value: last?.decision || twin.readiness.label,
+      meta: last ? fmt(last.mission_feasibility_index, 0) + "% feasibility" : twin.readiness.reason,
+      icon: <CheckCircle2 />,
+      tone: eligible ? "green" : "orange",
+    },
+    {
+      label: "Active diagnosis",
+      value: fault,
+      meta: ai.anomaly ? fmt(ai.fault_confidence * 100, 0) + "% confidence" : "All monitored systems nominal",
+      icon: <Zap />,
+      tone: faultTone,
+    },
+  ];
+  const subs = [
+    ["Thermal", h.thermal, fmt(t.cht, 1) + " °C"],
+    ["Lubrication", h.lubrication, fmt(t.oil_pressure * 100, 0) + " kPa"],
+    ["Mechanical", h.mechanical, fmt(t.vibration, 3) + " g"],
+    ["Combustion", h.combustion, fmt(t.egt, 0) + " °C"],
+    ["Electrical", h.electrical, fmt(t.battery_voltage, 1) + " V"],
+  ];
+  return (
+    <div className="ref-page command-v4">
+      <PageHeader
+        title="Command Center"
+        subtitle={"Live condition, AI diagnosis and mission readiness for " + twin.engine_id}
+      />
+      <div className="cc-decision-cards">
+        {metrics.map((m) => (
+          <Panel key={m.label} className={"decision-card " + m.tone}>
+            <div className="decision-icon">{m.icon}</div>
+            <div>
+              <span>{m.label}</span>
+              <b>{m.value}</b>
+              <small>{m.meta}</small>
+            </div>
+          </Panel>
+        ))}
+      </div>
+      <div className="cc-command-grid">
+        <Panel className="cc-engine-v4">
+          <PanelTitle
+            title="Interactive Engine Digital Twin"
+            subtitle="Drag to rotate · Scroll to zoom · Use X-ray to locate faults"
+            right={
+              <StatusPill tone={eligible ? "green" : "orange"}>
+                <Radio /> {eligible ? "LIVE" : "DATA HOLD"}
+              </StatusPill>
+            }
+          />
+          <div className="cc-engine-stage-v4">
+            <EngineTwin compact autoRotate />
+          </div>
+        </Panel>
+        <Panel className="cc-intelligence">
+          <PanelTitle
+            icon={<Zap />}
+            title="AI Decision Brief"
+            subtitle="Current engineering interpretation"
+          />
+          <div className={"ai-condition " + faultTone}>
+            {ai.anomaly ? <AlertTriangle /> : <CheckCircle2 />}
+            <div>
+              <span>DETECTED CONDITION</span>
+              <b>{fault}</b>
+              <small>{fmt(ai.fault_confidence * 100, 0)}% diagnostic confidence</small>
+            </div>
+          </div>
+          <div className="ai-readings">
+            <div>
+              <span>Oil pressure residual</span>
+              <b>
+                {r.oil_pressure_residual >= 0 ? "+" : ""}
+                {fmt(r.oil_pressure_residual * 100, 1)} kPa
+              </b>
+            </div>
+            <div>
+              <span>CHT residual</span>
+              <b>
+                {r.cht_residual >= 0 ? "+" : ""}
+                {fmt(r.cht_residual, 1)} °C
+              </b>
+            </div>
+            <div>
+              <span>Vibration residual</span>
+              <b>
+                {r.vibration_residual >= 0 ? "+" : ""}
+                {fmt(r.vibration_residual, 3)} g
+              </b>
+            </div>
+          </div>
+          <div className="ai-action">
+            <span>RECOMMENDED ACTION</span>
+            <p>{twin.maintenance.reason}</p>
+            <small>
+              {eligible
+                ? "Decision inputs are fresh and eligible."
+                : "Restore fresh telemetry before operational use."}
+            </small>
+          </div>
+          <button className="ref-primary full" onClick={() => setView("diagnostics")}>
+            Open detailed diagnostics <ArrowRight />
+          </button>
+        </Panel>
+      </div>
+      <div className="cc-lower-grid">
+        <Panel>
+          <PanelTitle
+            icon={<Activity />}
+            title="Live Telemetry Trends"
+            subtitle="Last 90 synchronized samples"
+          />
+          <MiniLineChart
+            series={[
+              { name: "CHT °C", values: history.cht || [], color: "#1677ff" },
+              {
+                name: "Oil pressure ×100",
+                values: (history.oil_pressure || []).map((v) => v * 100),
+                color: "#20a47b",
+              },
+              {
+                name: "Vibration ×100",
+                values: (history.vibration || []).map((v) => v * 100),
+                color: "#f59e0b",
+              },
+            ]}
+            labels={["-90s", "-75s", "-60s", "-45s", "-30s", "-15s", "now"]}
+          />
+          <div className="telemetry-strip">
+            <div>
+              <Gauge />
+              <span>RPM</span>
+              <b>{fmt(t.rpm, 0)}</b>
+            </div>
+            <div>
+              <Thermometer />
+              <span>CHT</span>
+              <b>{fmt(t.cht, 1)}°C</b>
+            </div>
+            <div>
+              <Droplets />
+              <span>Oil</span>
+              <b>{fmt(t.oil_pressure * 100, 1)} kPa</b>
+            </div>
+            <div>
+              <TrendingDown />
+              <span>Fuel flow</span>
+              <b>{fmt(t.fuel_flow, 1)} L/h</b>
+            </div>
+          </div>
+        </Panel>
+        <Panel>
+          <PanelTitle title="Subsystem Health" subtitle="Select Digital Twin for part-level inspection" />
+          <div className="subsystem-list">
+            {subs.map(([name, value, reading]) => (
+              <div key={String(name)}>
+                <i className={Number(value) < 86 ? "warn" : ""} />
+                <span>
+                  {name}
+                  <small>{reading}</small>
+                </span>
+                <div className="health-bar">
+                  <i style={{ width: Math.max(2, Number(value)) + "%" }} />
+                </div>
+                <b>{fmt(Number(value), 0)}%</b>
+              </div>
+            ))}
+          </div>
+          <button className="ref-outline full" onClick={() => setView("digitalTwin")}>
+            Open engineering workbench <ArrowRight />
+          </button>
+        </Panel>
+      </div>
+    </div>
+  );
 }

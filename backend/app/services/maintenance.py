@@ -81,6 +81,10 @@ class MaintenanceEngine:
                 f"Probable condition: {fault}. Engineering health index "
                 f"{health['overall']:.1f}/100; simulation-derived RUL {ai['rul_hours']:.1f} h."
             ),
-            "next_mission_suitability": "NOT_RECOMMENDED" if priority == "NO_GO" else "REVIEW" if priority != "MONITOR" else "READY",
+            "next_mission_suitability": "NOT_RECOMMENDED"
+            if priority == "NO_GO"
+            else "REVIEW"
+            if priority != "MONITOR"
+            else "READY",
             "validation_scope": "PROTOTYPE_DECISION_SUPPORT_ONLY",
         }

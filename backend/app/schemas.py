@@ -1,20 +1,40 @@
 from __future__ import annotations
-from datetime import datetime, timezone
-from typing import Dict, Literal, Optional
-from pydantic import BaseModel, Field, StringConstraints
-from typing_extensions import Annotated
 
-EngineId = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")]
+from datetime import UTC, datetime
+from typing import Annotated, Literal
+
+from pydantic import BaseModel, Field, StringConstraints
+
+EngineId = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_-]+$"),
+]
 
 
 class SignUpRequest(BaseModel):
     name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=2, max_length=120)]
-    email: Annotated[str, StringConstraints(strip_whitespace=True, min_length=3, max_length=255, pattern=r"^[^\s@]+@[^\s@]+\.[^\s@]+$")]
+    email: Annotated[
+        str,
+        StringConstraints(
+            strip_whitespace=True,
+            min_length=3,
+            max_length=255,
+            pattern=r"^[^\s@]+@[^\s@]+\.[^\s@]+$",
+        ),
+    ]
     password: Annotated[str, StringConstraints(min_length=10, max_length=128)]
 
 
 class SignInRequest(BaseModel):
-    email: Annotated[str, StringConstraints(strip_whitespace=True, min_length=3, max_length=255, pattern=r"^[^\s@]+@[^\s@]+\.[^\s@]+$")]
+    email: Annotated[
+        str,
+        StringConstraints(
+            strip_whitespace=True,
+            min_length=3,
+            max_length=255,
+            pattern=r"^[^\s@]+@[^\s@]+\.[^\s@]+$",
+        ),
+    ]
     password: Annotated[str, StringConstraints(min_length=1, max_length=128)]
 
 
@@ -40,7 +60,7 @@ class Telemetry(BaseModel):
     """
 
     engine_id: EngineId = "ENGINE-01"
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
     rpm: float = Field(ge=0, le=10000, description="Engine crankshaft speed, rev/min")
     throttle: float = Field(ge=0, le=100, description="Throttle demand, percent")
     cht: float = Field(ge=-80, le=400, description="Cylinder-head temperature, degC")
@@ -58,11 +78,17 @@ class Telemetry(BaseModel):
 
 
 class MissionRequest(BaseModel):
-    mission_type: Literal["endurance", "high_altitude", "hot_weather", "rapid_throttle", "patrol"] = "endurance"
-    duration_hours: float = Field(8, ge=.25, le=48, description="Planned mission duration, h")
-    cruise_altitude_m: float = Field(5500, ge=0, le=12000, description="Planned representative cruise altitude, m")
+    mission_type: Literal["endurance", "high_altitude", "hot_weather", "rapid_throttle", "patrol"] = (
+        "endurance"
+    )
+    duration_hours: float = Field(8, ge=0.25, le=48, description="Planned mission duration, h")
+    cruise_altitude_m: float = Field(
+        5500, ge=0, le=12000, description="Planned representative cruise altitude, m"
+    )
     ambient_temp_c: float = Field(35, ge=-50, le=70, description="Representative ambient temperature, degC")
-    average_throttle_pct: float = Field(75, ge=10, le=100, description="Representative average throttle/load, percent")
+    average_throttle_pct: float = Field(
+        75, ge=10, le=100, description="Representative average throttle/load, percent"
+    )
 
 
 class FaultCommand(BaseModel):
@@ -82,7 +108,7 @@ class FaultCommand(BaseModel):
 
 
 class ReplayStart(BaseModel):
-    label: Optional[Annotated[str, StringConstraints(strip_whitespace=True, max_length=120)]] = None
+    label: Annotated[str, StringConstraints(strip_whitespace=True, max_length=120)] | None = None
 
 
 class TwinEvent(BaseModel):
@@ -95,15 +121,15 @@ class TwinEvent(BaseModel):
 class TwinState(BaseModel):
     engine_id: str
     timestamp: datetime
-    telemetry: Dict[str, float | str]
-    expected: Dict[str, float]
-    residuals: Dict[str, float]
-    trends: Dict[str, float]
+    telemetry: dict[str, float | str]
+    expected: dict[str, float]
+    residuals: dict[str, float]
+    trends: dict[str, float]
     events: list[TwinEvent]
-    sensor_trust: Dict[str, float]
-    data_quality: Dict[str, float | str]
-    health: Dict[str, float]
-    ai: Dict[str, object]
-    confidence: Dict[str, float]
-    maintenance: Dict[str, object]
-    readiness: Dict[str, object]
+    sensor_trust: dict[str, float]
+    data_quality: dict[str, float | str]
+    health: dict[str, float]
+    ai: dict[str, object]
+    confidence: dict[str, float]
+    maintenance: dict[str, object]
+    readiness: dict[str, object]

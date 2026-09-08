@@ -1,11 +1,12 @@
 from __future__ import annotations
+
 import argparse
 import json
 import math
 import os
 import random
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from urllib.request import Request, urlopen
 
 API = os.getenv("TWINGUARD_API", "http://127.0.0.1:8000")
@@ -59,31 +60,31 @@ class EngineSimulator:
         target_severity = float(cfg.get("severity", 0.0))
         s = self._fault_progress(fault, target_severity)
 
-        self.phase += .08
+        self.phase += 0.08
         self.hours += 1 / 3600
-        throttle = 70 + 5 * math.sin(self.phase * .35) + random.gauss(0, 1.4)
-        altitude = 4300 + 380 * math.sin(self.phase * .12) + random.gauss(0, 18)
-        ambient = 25 + 2.0 * math.sin(self.phase * .08) + random.gauss(0, .25)
-        rpm = 4050 + 260 * math.sin(self.phase * .55) + random.gauss(0, 45)
+        throttle = 70 + 5 * math.sin(self.phase * 0.35) + random.gauss(0, 1.4)
+        altitude = 4300 + 380 * math.sin(self.phase * 0.12) + random.gauss(0, 18)
+        ambient = 25 + 2.0 * math.sin(self.phase * 0.08) + random.gauss(0, 0.25)
+        rpm = 4050 + 260 * math.sin(self.phase * 0.55) + random.gauss(0, 45)
 
         # Low-order altitude correction used by both simulator and twin. This is
         # a generic surrogate, not an OEM performance map.
-        density = max(.58, 1 - altitude / 21000)
+        density = max(0.58, 1 - altitude / 21000)
         load = throttle / 100
-        cht = ambient + 105 + 58 * load + .0048 * (rpm - 2500) + 10 * (1 - density) + random.gauss(0, 2.2)
-        egt = 500 + 250 * load + .015 * (rpm - 2500) + 16 * (1 - density) + random.gauss(0, 7)
-        oil_t = ambient + 48 + 46 * load + .002 * (rpm - 2500) + random.gauss(0, 1.5)
-        oil_p = 3 + .00046 * rpm - .018 * max(oil_t - 85, 0) + random.gauss(0, .045)
-        fuel = 5.2 + .0022 * rpm + 7.2 * load / density + random.gauss(0, .18)
-        vib = .16 + abs(rpm - 3900) / 11000 + .07 * load + random.gauss(0, .012)
-        battery = 27.6 + .25 * min(1, rpm / 2500) + random.gauss(0, .06)
-        alternator = 28.15 + random.gauss(0, .05)
-        timing = 17.2 + .00032 * (rpm - 2500) + 1.6 * load + random.gauss(0, .12)
+        cht = ambient + 105 + 58 * load + 0.0048 * (rpm - 2500) + 10 * (1 - density) + random.gauss(0, 2.2)
+        egt = 500 + 250 * load + 0.015 * (rpm - 2500) + 16 * (1 - density) + random.gauss(0, 7)
+        oil_t = ambient + 48 + 46 * load + 0.002 * (rpm - 2500) + random.gauss(0, 1.5)
+        oil_p = 3 + 0.00046 * rpm - 0.018 * max(oil_t - 85, 0) + random.gauss(0, 0.045)
+        fuel = 5.2 + 0.0022 * rpm + 7.2 * load / density + random.gauss(0, 0.18)
+        vib = 0.16 + abs(rpm - 3900) / 11000 + 0.07 * load + random.gauss(0, 0.012)
+        battery = 27.6 + 0.25 * min(1, rpm / 2500) + random.gauss(0, 0.06)
+        alternator = 28.15 + random.gauss(0, 0.05)
+        timing = 17.2 + 0.00032 * (rpm - 2500) + 1.6 * load + random.gauss(0, 0.12)
 
         if fault == "lubrication":
             oil_p -= 1.45 * s
             oil_t += 25 * s
-            vib += .26 * s
+            vib += 0.26 * s
         elif fault == "overheating":
             cht += 45 * s
             egt += 66 * s
@@ -93,10 +94,10 @@ class EngineSimulator:
             oil_t += 20 * s
             egt += 18 * s
         elif fault == "vibration":
-            vib += .78 * s
+            vib += 0.78 * s
         elif fault == "sensor_drift":
             # Single-channel bias without supporting physical changes.
-            oil_p += .85 * s + .25 * s * math.sin(self.phase * .08)
+            oil_p += 0.85 * s + 0.25 * s * math.sin(self.phase * 0.08)
         elif fault == "injector":
             fuel += 2.4 * s
             egt += 75 * s
@@ -104,19 +105,19 @@ class EngineSimulator:
         elif fault == "misfire":
             rpm += random.gauss(0, 300 * s)
             egt += random.gauss(0, 55 * s)
-            vib += .30 * s
+            vib += 0.30 * s
         elif fault == "combustion_instability":
             rpm += 130 * s * math.sin(self.phase * 3.3)
             egt += 48 * s * math.sin(self.phase * 2.7)
-            fuel += .9 * s * math.sin(self.phase * 2.1)
-            vib += .18 * s
+            fuel += 0.9 * s * math.sin(self.phase * 2.1)
+            vib += 0.18 * s
         elif fault == "alternator_degradation":
             alternator -= 5.0 * s
             battery -= 2.0 * s
 
         return {
             "engine_id": ENGINE,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "rpm": rpm,
             "throttle": throttle,
             "cht": cht,
@@ -124,7 +125,7 @@ class EngineSimulator:
             "oil_pressure": oil_p,
             "oil_temperature": oil_t,
             "fuel_flow": fuel,
-            "vibration": max(.05, vib),
+            "vibration": max(0.05, vib),
             "battery_voltage": battery,
             "alternator_voltage": alternator,
             "altitude": altitude,
@@ -181,7 +182,11 @@ def run_mqtt(rate):
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--transport", choices=["http", "mqtt"], default=os.getenv("SIM_TRANSPORT", "http"))
+    ap.add_argument(
+        "--transport",
+        choices=["http", "mqtt"],
+        default=os.getenv("SIM_TRANSPORT", "http"),
+    )
     ap.add_argument("--rate", type=float, default=1.0)
     args = ap.parse_args()
     (run_mqtt if args.transport == "mqtt" else run_http)(args.rate)

@@ -1,22 +1,49 @@
 from __future__ import annotations
-from pathlib import Path
+
 import json
 import math
 import os
+from pathlib import Path
 
 import joblib
 import numpy as np
 
 FEATURES = [
-    "rpm", "throttle", "cht", "egt", "oil_pressure", "oil_temperature", "fuel_flow", "vibration",
-    "battery_voltage", "alternator_voltage", "injection_timing", "altitude", "ambient_temperature",
-    "cht_residual", "egt_residual", "oil_pressure_residual", "oil_temperature_residual", "fuel_flow_residual",
-    "vibration_residual", "battery_voltage_residual", "alternator_voltage_residual", "injection_timing_residual",
+    "rpm",
+    "throttle",
+    "cht",
+    "egt",
+    "oil_pressure",
+    "oil_temperature",
+    "fuel_flow",
+    "vibration",
+    "battery_voltage",
+    "alternator_voltage",
+    "injection_timing",
+    "altitude",
+    "ambient_temperature",
+    "cht_residual",
+    "egt_residual",
+    "oil_pressure_residual",
+    "oil_temperature_residual",
+    "fuel_flow_residual",
+    "vibration_residual",
+    "battery_voltage_residual",
+    "alternator_voltage_residual",
+    "injection_timing_residual",
 ]
 
 SUPPORTED_LABELS = [
-    "normal", "lubrication", "overheating", "cooling_degradation", "vibration", "sensor_drift",
-    "injector", "misfire", "combustion_instability", "alternator_degradation",
+    "normal",
+    "lubrication",
+    "overheating",
+    "cooling_degradation",
+    "vibration",
+    "sensor_drift",
+    "injector",
+    "misfire",
+    "combustion_instability",
+    "alternator_degradation",
 ]
 
 
@@ -57,8 +84,8 @@ class AIEngine:
             "rul": (model_path / "rul_model.joblib").exists(),
         }
 
-        self.anomaly = safe("anomaly_model.joblib") if self.features_match else None
         self.native_ml = self.native_ml_requested and self.artifacts_compatible
+        self.anomaly = safe("anomaly_model.joblib") if self.native_ml else None
         self.fault = safe("fault_model.joblib") if self.native_ml else None
         self.rul = safe("rul_model.joblib") if self.native_ml else None
 
@@ -69,7 +96,11 @@ class AIEngine:
             warnings.append("packaged classifier uses an older fault taxonomy")
         if self.native_ml_requested and not self.artifacts_compatible:
             warnings.append("native ML was requested but incompatible artifacts were rejected")
-        self.model_warning = "; ".join(warnings) + ". Retrain the synthetic model pack before enabling native ML." if warnings else None
+        self.model_warning = (
+            "; ".join(warnings) + ". Retrain the synthetic model pack before enabling native ML."
+            if warnings
+            else None
+        )
 
     def vector(self, telemetry, residuals):
         merged = {**telemetry, **residuals}
@@ -89,7 +120,7 @@ class AIEngine:
             try:
                 raw = float(-self.anomaly.score_samples(x)[0])
                 anomaly = bool(self.anomaly.predict(x)[0] == -1)
-                anomaly_score = max(0.0, min(1.0, (raw - .35) / .45))
+                anomaly_score = max(0.0, min(1.0, (raw - 0.35) / 0.45))
             except Exception:
                 anomaly_score, anomaly = self._engineering_anomaly(t, r, trends)
         else:
@@ -100,7 +131,9 @@ class AIEngine:
             try:
                 pp = self.fault.predict_proba(x)[0]
                 classes = [
-                    self.labels[int(c)] if str(c).lstrip("-").isdigit() and int(c) < len(self.labels) else str(c)
+                    self.labels[int(c)]
+                    if str(c).lstrip("-").isdigit() and int(c) < len(self.labels)
+                    else str(c)
                     for c in self.fault.classes_
                 ]
                 probs = {c: float(v) for c, v in zip(classes, pp)}
@@ -134,7 +167,9 @@ class AIEngine:
             "rul_interval_hours": interval,
             "rul_uncertainty_hours": round((interval["upper"] - interval["lower"]) / 2, 2),
             "evidence": evidence,
-            "model_state": "NATIVE_ML" if self.native_ml and self.fault is not None else "ENGINEERING_FALLBACK",
+            "model_state": "NATIVE_ML"
+            if self.native_ml and self.fault is not None
+            else "ENGINEERING_FALLBACK",
             "validation_scope": "SYNTHETIC_PROOF_OF_CONCEPT",
             "rul_basis": rul_basis,
             "rul_interval_basis": interval["basis"],
@@ -144,7 +179,9 @@ class AIEngine:
 
     def runtime_status(self):
         return {
-            "active_mode": "NATIVE_ML" if self.native_ml and self.fault is not None and self.rul is not None else "ENGINEERING_FALLBACK",
+            "active_mode": "NATIVE_ML"
+            if self.native_ml and self.fault is not None and self.rul is not None
+            else "ENGINEERING_FALLBACK",
             "native_ml_requested": self.native_ml_requested,
             "artifact_contract_compatible": self.artifacts_compatible,
             "feature_contract": "aero-piston-v2",
@@ -166,15 +203,18 @@ class AIEngine:
             base_half_width = max(12.0, 1.65 * rmse)
             interval_basis = "synthetic_validation_rmse_plus_state_uncertainty"
         else:
-            base_half_width = max(20.0, estimate * .24)
+            base_half_width = max(20.0, estimate * 0.24)
             interval_basis = "engineering_surrogate_conservative_band"
         trend_load = (
-            abs(float(trends.get("health_index_per_min", 0.0))) * .55
+            abs(float(trends.get("health_index_per_min", 0.0))) * 0.55
             + abs(float(trends.get("oil_pressure_per_min", 0.0))) * 2.4
-            + abs(float(trends.get("cht_per_min", 0.0))) * .08
+            + abs(float(trends.get("cht_per_min", 0.0))) * 0.08
             + abs(float(trends.get("vibration_per_min", 0.0))) * 4.0
         )
-        half_width = min(max(8.0, base_half_width + trend_load + 7.0 * float(anomaly_score)), max(25.0, estimate * .55))
+        half_width = min(
+            max(8.0, base_half_width + trend_load + 7.0 * float(anomaly_score)),
+            max(25.0, estimate * 0.55),
+        )
         return {
             "lower": round(max(0.0, estimate - half_width), 2),
             "estimate": round(estimate, 2),
@@ -184,44 +224,92 @@ class AIEngine:
         }
 
     def _engineering_anomaly(self, t, r, trends):
+        def mean(key):
+            return float(trends.get(f"{key}_mean", r[key]))
+
         residual_evidence = (
-            abs(r["cht_residual"]) / 35 + abs(r["egt_residual"]) / 80 + abs(r["oil_pressure_residual"]) / 1.5
-            + max(0, t["vibration"] - .3) / .7 + abs(r.get("battery_voltage_residual", 0)) / 2.2
-            + abs(r.get("alternator_voltage_residual", 0)) / 2.5 + abs(r.get("injection_timing_residual", 0)) / 3.0
+            abs(mean("cht_residual")) / 35
+            + abs(mean("egt_residual")) / 80
+            + abs(mean("oil_pressure_residual")) / 1.5
+            + abs(mean("vibration_residual")) / 0.65
+            + abs(mean("battery_voltage_residual")) / 2.2
+            + abs(mean("alternator_voltage_residual")) / 2.5
+            + abs(mean("injection_timing_residual")) / 3.0
         )
+        instability_evidence = (
+            max(0, float(trends.get("rpm_stddev", 0)) - 95) / 220
+            + max(0, float(trends.get("egt_stddev", 0)) - 12) / 55
+            + max(0, float(trends.get("fuel_flow_stddev", 0)) - 0.22) / 0.8
+        )
+        isolated_sensor_evidence = max(0, mean("oil_pressure_residual") - 0.4) / 0.7
         trend_evidence = (
             max(0, -float(trends.get("oil_pressure_per_min", 0))) / 1.3
             + max(0, float(trends.get("cht_per_min", 0))) / 45
             + max(0, float(trends.get("oil_temperature_per_min", 0))) / 30
-            + max(0, float(trends.get("vibration_per_min", 0))) / .45
+            + max(0, float(trends.get("vibration_per_min", 0))) / 0.45
         )
-        score = max(0.0, min(1.0, (residual_evidence + .45 * trend_evidence) / 3.2))
-        return score, score > .32
+        score = max(
+            0.0,
+            min(
+                1.0,
+                (
+                    residual_evidence
+                    + 0.55 * instability_evidence
+                    + 0.45 * trend_evidence
+                    + isolated_sensor_evidence
+                )
+                / 3.0,
+            ),
+        )
+        return score, score > 0.22
 
     def _engineering_fault(self, t, r, trends, anomaly):
+        def mean(key):
+            return float(trends.get(f"{key}_mean", r[key]))
+
         oil_drop = max(0, -float(trends.get("oil_pressure_per_min", 0)))
         cht_rise = max(0, float(trends.get("cht_per_min", 0)))
         oil_temp_rise = max(0, float(trends.get("oil_temperature_per_min", 0)))
         vibration_rise = max(0, float(trends.get("vibration_per_min", 0)))
         alternator_drop = max(0, -float(trends.get("alternator_voltage_per_min", 0)))
+        rpm_stddev = float(trends.get("rpm_stddev", 0))
+        egt_stddev = float(trends.get("egt_stddev", 0))
+        fuel_stddev = float(trends.get("fuel_flow_stddev", 0))
         heur = {
-            "lubrication": max(0, -r["oil_pressure_residual"]) / 1.5 + max(0, r["oil_temperature_residual"]) / 30 + oil_drop / 1.2,
-            "overheating": max(0, r["cht_residual"]) / 35 + max(0, r["egt_residual"]) / 80 + cht_rise / 42,
-            "cooling_degradation": max(0, r["cht_residual"]) / 38 + max(0, r["oil_temperature_residual"]) / 28 + oil_temp_rise / 28,
-            "vibration": max(0, t["vibration"] - .3) / .7 + vibration_rise / .4,
-            "sensor_drift": max(0, abs(r["oil_pressure_residual"]) - .8) / 1.5,
-            "injector": max(0, abs(r["fuel_flow_residual"]) - 1) / 4 + max(0, abs(r["egt_residual"]) - 35) / 100 + abs(r.get("injection_timing_residual", 0)) / 5,
-            "misfire": max(0, t["vibration"] - .35) / .8 + max(0, abs(r["egt_residual"]) - 30) / 120,
-            "combustion_instability": max(0, abs(r["egt_residual"]) - 20) / 90 + max(0, t["vibration"] - .28) / .75 + max(0, abs(r["fuel_flow_residual"]) - .5) / 4,
-            "alternator_degradation": max(0, -r.get("alternator_voltage_residual", 0)) / 3 + max(0, -r.get("battery_voltage_residual", 0)) / 2 + alternator_drop / 4,
-            "normal": .65,
+            "lubrication": max(0, -mean("oil_pressure_residual")) / 1.1
+            + max(0, mean("oil_temperature_residual")) / 24
+            + oil_drop / 1.2,
+            "overheating": max(0, mean("cht_residual")) / 32
+            + max(0, mean("egt_residual")) / 72
+            + cht_rise / 42,
+            "cooling_degradation": max(0, mean("cht_residual")) / 34
+            + max(0, mean("oil_temperature_residual")) / 23
+            + oil_temp_rise / 28,
+            "vibration": max(0, mean("vibration_residual")) / 0.4
+            + vibration_rise / 0.4
+            - max(0, rpm_stddev - 110) / 220,
+            "sensor_drift": max(0, mean("oil_pressure_residual") - 0.35) / 0.55,
+            "injector": max(0, mean("fuel_flow_residual") - 0.5) / 1.7
+            + max(0, mean("egt_residual") - 25) / 65
+            + max(0, mean("injection_timing_residual") - 0.3) / 1.1,
+            "misfire": max(0, rpm_stddev - 130) / 100
+            + max(0, egt_stddev - 20) / 35
+            + (max(0, mean("vibration_residual")) / 0.38 if rpm_stddev > 130 else 0),
+            "combustion_instability": max(0, rpm_stddev - 90) / 180
+            + max(0, egt_stddev - 12) / 50
+            + max(0, fuel_stddev - 0.28) / 0.45
+            + (max(0, mean("vibration_residual")) / 0.6 if fuel_stddev > 0.28 else 0),
+            "alternator_degradation": max(0, -mean("alternator_voltage_residual")) / 2.4
+            + max(0, -mean("battery_voltage_residual")) / 1.6
+            + alternator_drop / 4,
+            "normal": 0.45,
         }
         fault = max(heur, key=heur.get)
         probs = self._softmax_scores(heur)
         confidence = probs[fault]
         if not anomaly:
             fault = "normal"
-            confidence = max(confidence, .82)
+            confidence = max(confidence, 0.82)
             probs["normal"] = confidence
         return fault, confidence, probs
 
@@ -230,13 +318,17 @@ class AIEngine:
         worsening = (
             max(0, -float(trends.get("health_index_per_min", 0))) * 1.8
             + max(0, -float(trends.get("oil_pressure_per_min", 0))) * 5
-            + max(0, float(trends.get("cht_per_min", 0))) * .25
+            + max(0, float(trends.get("cht_per_min", 0))) * 0.25
         )
         penalty = (
-            abs(r["cht_residual"]) * .6 + abs(r["egt_residual"]) * .15 + max(0, -r["oil_pressure_residual"]) * 24
-            + max(0, t["vibration"] - .3) * 85 + max(0, -r.get("alternator_voltage_residual", 0)) * 5 + worsening
+            abs(r["cht_residual"]) * 0.6
+            + abs(r["egt_residual"]) * 0.15
+            + max(0, -r["oil_pressure_residual"]) * 24
+            + max(0, t["vibration"] - 0.3) * 85
+            + max(0, -r.get("alternator_voltage_residual", 0)) * 5
+            + worsening
         )
-        return max(8.0, 190 - penalty - float(t.get("operating_hours", 0)) * .08)
+        return max(8.0, 190 - penalty - float(t.get("operating_hours", 0)) * 0.08)
 
     def explain(self, t, r, fault):
         candidates = {
@@ -245,7 +337,7 @@ class AIEngine:
             "cht_residual": abs(r["cht_residual"]) / 35,
             "egt_residual": abs(r["egt_residual"]) / 80,
             "fuel_flow_residual": abs(r["fuel_flow_residual"]) / 4,
-            "vibration_residual": abs(r["vibration_residual"]) / .65,
+            "vibration_residual": abs(r["vibration_residual"]) / 0.65,
             "battery_voltage_residual": abs(r.get("battery_voltage_residual", 0)) / 2,
             "alternator_voltage_residual": abs(r.get("alternator_voltage_residual", 0)) / 2.5,
             "injection_timing_residual": abs(r.get("injection_timing_residual", 0)) / 3,

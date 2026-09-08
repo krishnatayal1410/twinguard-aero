@@ -4,7 +4,7 @@ import hashlib
 import hmac
 import re
 import secrets
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import delete, select
 
@@ -20,7 +20,7 @@ class AuthError(ValueError):
 
 
 def _now():
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _normalize(email: str) -> str:
@@ -121,7 +121,7 @@ def session_user(token: str | None) -> dict | None:
         if not row:
             db.commit()
             return None
-        exp = row.expires_at if row.expires_at.tzinfo else row.expires_at.replace(tzinfo=timezone.utc)
+        exp = row.expires_at if row.expires_at.tzinfo else row.expires_at.replace(tzinfo=UTC)
         if exp < now:
             db.delete(row)
             db.commit()

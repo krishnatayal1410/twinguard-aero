@@ -1,8 +1,11 @@
 from __future__ import annotations
+
 from collections import deque
 from datetime import datetime
+from statistics import fmean, pstdev
 from threading import RLock
 
+from ..core import settings
 from .ai_engine import AIEngine
 from .health import HealthEngine, readiness
 from .maintenance import MaintenanceEngine
@@ -11,7 +14,6 @@ from .persistence import persistence
 from .physics import PhysicsEngine
 from .replay import ReplayService
 from .sensor_trust import SensorTrustEngine
-from ..core import settings
 
 
 class TwinManager:
@@ -39,11 +41,11 @@ class TwinManager:
             abs(residuals.get("oil_pressure_residual", 0)) / 1.5,
             abs(residuals.get("oil_temperature_residual", 0)) / 28,
             abs(residuals.get("fuel_flow_residual", 0)) / 4,
-            abs(residuals.get("vibration_residual", 0)) / .65,
+            abs(residuals.get("vibration_residual", 0)) / 0.65,
             abs(residuals.get("alternator_voltage_residual", 0)) / 2.5,
         ]
         if anomaly:
-            corroborating = sum(1 for value in normalized if value >= .35)
+            corroborating = sum(1 for value in normalized if value >= 0.35)
             strongest = max(normalized) if normalized else 0
             return max(45.0, min(100.0, 52 + 9 * corroborating + 16 * min(1.0, strongest)))
         mean = sum(normalized) / max(1, len(normalized))
@@ -60,7 +62,7 @@ class TwinManager:
 
     def _trend(self, current: dict, key: str, section: str = "telemetry", window: int = 12) -> float:
         points = []
-        for item in list(self.history)[-(window - 1):]:
+        for item in list(self.history)[-(window - 1) :]:
             source = item.get(section, {})
             if key in source:
                 ts = self._seconds(item.get("timestamp"))
@@ -78,8 +80,27 @@ class TwinManager:
             return 0.0
         return (points[-1][1] - points[0][1]) / dt * 60.0
 
+    def _rolling_values(self, current: dict, key: str, section: str, window: int = 24) -> list[float]:
+        values = [
+            float(item[section][key])
+            for item in list(self.history)[-(window - 1) :]
+            if key in item.get(section, {})
+        ]
+        current_source = current if section == "telemetry" else current.get(section, {})
+        if key in current_source:
+            values.append(float(current_source[key]))
+        return values
+
+    def _rolling_mean(self, current: dict, key: str, section: str) -> float:
+        values = self._rolling_values(current, key, section)
+        return fmean(values) if values else 0.0
+
+    def _rolling_spread(self, current: dict, key: str) -> float:
+        values = self._rolling_values(current, key, "telemetry")
+        return pstdev(values) if len(values) > 1 else 0.0
+
     def _telemetry_trends(self, t: dict) -> dict:
-        return {
+        trends = {
             "oil_pressure_per_min": self._trend(t, "oil_pressure"),
             "oil_temperature_per_min": self._trend(t, "oil_temperature"),
             "cht_per_min": self._trend(t, "cht"),
@@ -87,7 +108,23 @@ class TwinManager:
             "vibration_per_min": self._trend(t, "vibration"),
             "battery_voltage_per_min": self._trend(t, "battery_voltage"),
             "alternator_voltage_per_min": self._trend(t, "alternator_voltage"),
+            "rpm_stddev": self._rolling_spread(t, "rpm"),
+            "egt_stddev": self._rolling_spread(t, "egt"),
+            "fuel_flow_stddev": self._rolling_spread(t, "fuel_flow"),
         }
+        for key in (
+            "cht_residual",
+            "egt_residual",
+            "oil_pressure_residual",
+            "oil_temperature_residual",
+            "fuel_flow_residual",
+            "vibration_residual",
+            "battery_voltage_residual",
+            "alternator_voltage_residual",
+            "injection_timing_residual",
+        ):
+            trends[f"{key}_mean"] = self._rolling_mean(t, key, "residuals")
+        return trends
 
     def _health_trend(self, t: dict, health: dict) -> float:
         points = []
@@ -104,41 +141,83 @@ class TwinManager:
         return (points[-1][1] - points[0][1]) / (points[-1][0] - points[0][0]) * 60.0
 
     def _event(self, timestamp: str, event_type: str, severity: str, message: str):
-        self.event_history.append({"timestamp": timestamp, "type": event_type, "severity": severity, "message": message})
+        self.event_history.append(
+            {
+                "timestamp": timestamp,
+                "type": event_type,
+                "severity": severity,
+                "message": message,
+            }
+        )
 
     def _record_events(self, previous: dict | None, current: dict):
         ts = str(current["timestamp"])
         if previous is None:
-            self._event(ts, "TWIN_SYNCHRONIZED", "success", "Digital Twin synchronized with live telemetry.")
+            self._event(
+                ts,
+                "TWIN_SYNCHRONIZED",
+                "success",
+                "Digital Twin synchronized with live telemetry.",
+            )
             return
 
         prev_ai = previous.get("ai", {})
         cur_ai = current.get("ai", {})
         if cur_ai.get("anomaly") and not prev_ai.get("anomaly"):
-            self._event(ts, "ANOMALY_DETECTED", "warning", "Persistent residual evidence crossed the anomaly threshold.")
+            self._event(
+                ts,
+                "ANOMALY_DETECTED",
+                "warning",
+                "Persistent residual evidence crossed the anomaly threshold.",
+            )
 
         prev_fault = str(prev_ai.get("probable_fault", "normal"))
         cur_fault = str(cur_ai.get("probable_fault", "normal"))
         if cur_fault != "normal" and cur_fault != prev_fault:
-            self._event(ts, "FAULT_IDENTIFIED", "warning", f"Probable fault changed to {cur_fault}.")
+            self._event(
+                ts,
+                "FAULT_IDENTIFIED",
+                "warning",
+                f"Probable fault changed to {cur_fault}.",
+            )
 
         prev_priority = str(previous.get("maintenance", {}).get("priority", ""))
         cur_priority = str(current.get("maintenance", {}).get("priority", ""))
         if cur_priority and cur_priority != prev_priority:
             severity = "critical" if cur_priority in {"NO_GO", "HIGH"} else "warning"
-            self._event(ts, "MAINTENANCE_CHANGE", severity, f"Maintenance priority changed to {cur_priority}.")
+            self._event(
+                ts,
+                "MAINTENANCE_CHANGE",
+                severity,
+                f"Maintenance priority changed to {cur_priority}.",
+            )
 
         prev_health = float(previous.get("health", {}).get("overall", 100.0))
         cur_health = float(current.get("health", {}).get("overall", 100.0))
         if prev_health >= 86 > cur_health:
-            self._event(ts, "HEALTH_CAUTION", "warning", f"Overall health crossed the caution threshold at {cur_health:.1f}/100.")
+            self._event(
+                ts,
+                "HEALTH_CAUTION",
+                "warning",
+                f"Overall health crossed the caution threshold at {cur_health:.1f}/100.",
+            )
         if prev_health >= 70 > cur_health:
-            self._event(ts, "HEALTH_CRITICAL", "critical", f"Overall health crossed the high-risk threshold at {cur_health:.1f}/100.")
+            self._event(
+                ts,
+                "HEALTH_CRITICAL",
+                "critical",
+                f"Overall health crossed the high-risk threshold at {cur_health:.1f}/100.",
+            )
 
         prev_quality = float(previous.get("data_quality", {}).get("overall", 100.0))
         cur_quality = float(current.get("data_quality", {}).get("overall", 100.0))
         if prev_quality >= settings.mission_min_data_quality > cur_quality:
-            self._event(ts, "DATA_QUALITY_HOLD", "critical", f"Data quality fell below the mission threshold at {cur_quality:.1f}/100.")
+            self._event(
+                ts,
+                "DATA_QUALITY_HOLD",
+                "critical",
+                f"Data quality fell below the mission threshold at {cur_quality:.1f}/100.",
+            )
 
     def ingest(self, telemetry: dict):
         with self.lock:
@@ -149,7 +228,8 @@ class TwinManager:
 
             expected = self.physics.expected(t)
             residuals = self.physics.residuals(t, expected)
-            trends = self._telemetry_trends(t)
+            trend_input = {**t, "residuals": residuals}
+            trends = self._telemetry_trends(trend_input)
             trust = self.trust.evaluate(t, residuals, self.previous)
             quality = self.trust.quality(t, trust)
             health = self.health.compute(t, residuals, trust)
@@ -164,7 +244,13 @@ class TwinManager:
             physics_conf = self._physics_confidence(residuals, bool(ai["anomaly"]))
             data_conf = float(quality["overall"])
             persistence_conf = min(100.0, 35.0 + self.anomaly_streak * 8.0) if ai["anomaly"] else 100.0
-            fused = .34 * ai_conf + .23 * sensor_conf + .20 * physics_conf + .10 * data_conf + .13 * persistence_conf
+            fused = (
+                0.34 * ai_conf
+                + 0.23 * sensor_conf
+                + 0.20 * physics_conf
+                + 0.10 * data_conf
+                + 0.13 * persistence_conf
+            )
             confidence = {
                 "ai": ai_conf,
                 "sensor": sensor_conf,
@@ -202,7 +288,15 @@ class TwinManager:
             new_state["events"] = list(self.event_history)
             self.state = new_state
             self.previous = t
-            self.history.append({"timestamp": t["timestamp"], "telemetry": t, "health": health, "ai": ai})
+            self.history.append(
+                {
+                    "timestamp": t["timestamp"],
+                    "telemetry": t,
+                    "residuals": residuals,
+                    "health": health,
+                    "ai": ai,
+                }
+            )
             self.replay.sample(self.state)
             persistence.save(self.state)
             return self.state

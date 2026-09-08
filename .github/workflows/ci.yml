@@ -29,11 +29,19 @@ jobs:
         with:
           python-version: '3.12'
           cache: pip
-          cache-dependency-path: backend/requirements.txt
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-dev.txt
       - name: Validate Docker Compose configuration
         run: docker compose config -q
       - name: Install backend dependencies
-        run: python -m pip install -r backend/requirements.txt
+        run: python -m pip install -r backend/requirements-dev.txt
+      - name: Check Python style and formatting
+        run: |
+          ruff check backend simulator ai scripts tools
+          ruff format --check backend simulator ai scripts tools
+      - name: Audit Python production dependencies
+        run: pip-audit -r backend/requirements.txt
       - name: Compile Python
         run: python -m compileall -q backend simulator ai scripts
       - name: Enforce release integrity and SEO contract
@@ -63,6 +71,7 @@ jobs:
         run: |
           mkdir -p data/runtime
           pytest -q backend/tests
+          python scripts/validate_fault_matrix.py
       - name: Verify packaged native ML artifacts
         env:
           PYTHONPATH: ${{ github.workspace }}/backend
@@ -160,7 +169,11 @@ jobs:
         with:
           node-version: '22'
       - name: Install frontend dependencies
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
+      - name: Check formatting and production dependencies
+        run: |
+          npm run format:check
+          npm audit --omit=dev --audit-level=high
       - name: Typecheck and production build
         shell: bash
         run: |
@@ -190,7 +203,7 @@ jobs:
         with:
           node-version: '22'
       - name: Install frontend dependencies
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
       - name: Install Chromium for Playwright
         run: npx playwright install --with-deps chromium
       - name: Build hosted demo contract

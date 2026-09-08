@@ -35,7 +35,7 @@ Working architecture includes:
 - mission recording and replay,
 - predictive-maintenance guidance,
 - React/TypeScript mission-control HMI,
-- procedural interactive aero-piston 3D visualization,
+- optimized GLB aero-piston 3D asset with rotate, explode, x-ray, opacity, labels and fault location,
 - Docker / Docker Compose packaging,
 - SQLite local persistence and PostgreSQL/TimescaleDB deployment path,
 - CAN, MQTT and Unreal integration scaffolds,
@@ -367,6 +367,18 @@ Fault matrix:
 python scripts/validate_fault_matrix.py
 ```
 
+Complete source-quality checks:
+
+```bash
+ruff check backend simulator ai scripts tools
+ruff format --check backend simulator ai scripts tools
+cd frontend
+npm run format:check
+npm run check
+npm audit --omit=dev --audit-level=high
+npm run e2e
+```
+
 System verifier when the stack is running:
 
 ```bash
@@ -396,6 +408,8 @@ Included scaffolding:
 - PostgreSQL / TimescaleDB deployment path.
 
 The current simulator can be replaced by authorized ECU/test-rig telemetry as long as the incoming data is mapped to the canonical telemetry schema.
+
+The Vercel deployment is explicitly marked **HOSTED DEMO** and runs deterministic synthetic telemetry in the browser. The local/Docker deployment uses the FastAPI backend, persistence, authenticated API routes and live simulator process.
 
 ---
 

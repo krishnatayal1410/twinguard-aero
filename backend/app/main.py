@@ -1,21 +1,37 @@
 from __future__ import annotations
+
 import asyncio
 import hmac
 import json
 import logging
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi import (
+    Depends,
+    FastAPI,
+    Header,
+    HTTPException,
+    Request,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
 from .core import settings
-from .integrations.mqtt_consumer import start_mqtt
+from .integrations.mqtt_consumer import start_mqtt, stop_mqtt
 from .integrations.unreal_udp import send_to_unreal
-from .schemas import FaultCommand, MissionRequest, ReplayStart, SignInRequest, SignUpRequest, Telemetry
+from .schemas import (
+    FaultCommand,
+    MissionRequest,
+    ReplayStart,
+    SignInRequest,
+    SignUpRequest,
+    Telemetry,
+)
 from .services.auth import AuthError, session_user, signin, signout, signup
 from .services.explainability import tree_contributions
 from .services.twin_manager import manager
@@ -27,7 +43,10 @@ clients: set[WebSocket] = set()
 
 class SecurityMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
-        if request.method in {"POST", "PUT", "PATCH"} and int(request.headers.get("content-length", "0") or 0) > settings.max_body_bytes:
+        if (
+            request.method in {"POST", "PUT", "PATCH"}
+            and int(request.headers.get("content-length", "0") or 0) > settings.max_body_bytes
+        ):
             return JSONResponse({"detail": "Request too large"}, 413)
         response = await call_next(request)
         response.headers.update(
@@ -73,26 +92,45 @@ async def lifespan(app: FastAPI):
         if state := ingest_sync(data):
             asyncio.run_coroutine_threadsafe(broadcast(state), loop)
 
-    start_mqtt(mqtt_ingest)
-    yield
+    mqtt_client = start_mqtt(mqtt_ingest)
+    try:
+        yield
+    finally:
+        stop_mqtt(mqtt_client)
 
 
 docs = None if settings.environment == "production" else "/docs"
-app = FastAPI(title="TwinGuard Aero API", version=settings.version, lifespan=lifespan, docs_url=docs, redoc_url=None)
+app = FastAPI(
+    title="TwinGuard Aero API",
+    version=settings.version,
+    lifespan=lifespan,
+    docs_url=docs,
+    redoc_url=None,
+)
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=list(settings.trusted_hosts))
 app.add_middleware(
     CORSMiddleware,
     allow_origins=list(settings.cors_origins),
     allow_credentials=False,
     allow_methods=["GET", "POST"],
-    allow_headers=["Content-Type", "X-Requested-With", "X-TwinGuard-Ingest-Key", "Authorization"],
+    allow_headers=[
+        "Content-Type",
+        "X-Requested-With",
+        "X-TwinGuard-Ingest-Key",
+        "Authorization",
+    ],
 )
 app.add_middleware(SecurityMiddleware)
 
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": settings.app_name, "version": settings.version, "engine_id": settings.engine_id}
+    return {
+        "status": "ok",
+        "service": settings.app_name,
+        "version": settings.version,
+        "engine_id": settings.engine_id,
+    }
 
 
 def _bearer(authorization: str | None) -> str | None:
@@ -128,8 +166,8 @@ def _state_age_seconds(state: dict | None) -> float | None:
     try:
         ts = datetime.fromisoformat(str(state["timestamp"]).replace("Z", "+00:00"))
         if ts.tzinfo is None:
-            ts = ts.replace(tzinfo=timezone.utc)
-        return max(0.0, (datetime.now(timezone.utc) - ts).total_seconds())
+            ts = ts.replace(tzinfo=UTC)
+        return max(0.0, (datetime.now(UTC) - ts).total_seconds())
     except Exception:
         return None
 
@@ -153,7 +191,9 @@ def _runtime_snapshot(state: dict) -> dict:
         snapshot["readiness"] = {
             "status": "DATA_HOLD",
             "label": "DATA HOLD",
-            "reason": f"Latest telemetry is stale for mission decision support ({age:.1f}s old; limit {settings.telemetry_stale_seconds:.1f}s). Restore live synchronization before release assessment." if age is not None else "Telemetry timestamp is invalid; restore live synchronization before release assessment.",
+            "reason": f"Latest telemetry is stale for mission decision support ({age:.1f}s old; limit {settings.telemetry_stale_seconds:.1f}s). Restore live synchronization before release assessment."
+            if age is not None
+            else "Telemetry timestamp is invalid; restore live synchronization before release assessment.",
         }
     elif not quality_ok:
         snapshot["readiness"] = {
@@ -195,7 +235,9 @@ def auth_signout(authorization: str | None = Header(default=None)):
 
 @app.post("/api/v1/telemetry")
 async def telemetry(t: Telemetry, x_twinguard_ingest_key: str | None = Header(default=None)):
-    if settings.ingest_api_key and not hmac.compare_digest(x_twinguard_ingest_key or "", settings.ingest_api_key):
+    if settings.ingest_api_key and not hmac.compare_digest(
+        x_twinguard_ingest_key or "", settings.ingest_api_key
+    ):
         raise HTTPException(401, "Invalid telemetry ingest key")
     if t.engine_id != settings.engine_id:
         raise HTTPException(403, "Engine ID is not authorized")
@@ -222,7 +264,20 @@ def twin(engine_id: str, user=Depends(require_user)):
 @app.get("/api/v1/diagnostics/{engine_id}")
 def diagnostics(engine_id: str, user=Depends(require_user)):
     state = current(engine_id)
-    return {k: state[k] for k in ("ai", "residuals", "trends", "events", "sensor_trust", "data_quality", "health", "confidence", "runtime_validity")}
+    return {
+        k: state[k]
+        for k in (
+            "ai",
+            "residuals",
+            "trends",
+            "events",
+            "sensor_trust",
+            "data_quality",
+            "health",
+            "confidence",
+            "runtime_validity",
+        )
+    }
 
 
 @app.get("/api/v1/diagnostics/{engine_id}/explain")
@@ -248,9 +303,15 @@ def mission(req: MissionRequest, user=Depends(require_user)):
     state = current(settings.engine_id)
     validity = state["runtime_validity"]
     if validity["stale"]:
-        raise HTTPException(409, "Mission analysis blocked: latest telemetry is stale. Restore live telemetry synchronization and retry.")
+        raise HTTPException(
+            409,
+            "Mission analysis blocked: latest telemetry is stale. Restore live telemetry synchronization and retry.",
+        )
     if not validity["decision_eligible"]:
-        raise HTTPException(409, "Mission analysis blocked: current data quality is below the configured decision threshold.")
+        raise HTTPException(
+            409,
+            "Mission analysis blocked: current data quality is below the configured decision threshold.",
+        )
     return manager.mission.analyze(state, req)
 
 
@@ -318,8 +379,16 @@ def system_status(user=Depends(require_user)):
         "environment": settings.environment,
         "engine_id": settings.engine_id,
         "database": settings.database_url.split(":", 1)[0],
-        "models": {"anomaly": manager.ai.anomaly is not None, "fault": manager.ai.fault is not None, "rul": manager.ai.rul is not None},
-        "integrations": {"mqtt": settings.mqtt_enabled, "unreal_udp": settings.unreal_udp_enabled, "can": settings.can_enabled},
+        "models": {
+            "anomaly": manager.ai.anomaly is not None,
+            "fault": manager.ai.fault is not None,
+            "rul": manager.ai.rul is not None,
+        },
+        "integrations": {
+            "mqtt": settings.mqtt_enabled,
+            "unreal_udp": settings.unreal_udp_enabled,
+            "can": settings.can_enabled,
+        },
         "telemetry": {
             "available": bool(state),
             "age_seconds": age,
@@ -355,8 +424,10 @@ async def twin_ws(ws: WebSocket, engine_id: str):
             await ws.send_json(
                 {
                     "type": "heartbeat",
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
-                    "runtime_validity": _runtime_snapshot(state)["runtime_validity"] if state else {"decision_eligible": False, "stale": True},
+                    "timestamp": datetime.now(UTC).isoformat(),
+                    "runtime_validity": _runtime_snapshot(state)["runtime_validity"]
+                    if state
+                    else {"decision_eligible": False, "stale": True},
                 }
             )
     except WebSocketDisconnect:

@@ -1,5 +1,6 @@
 from __future__ import annotations
-from datetime import datetime, timezone
+
+from datetime import UTC, datetime
 
 LIMITS = {
     "cht": 35.0,
@@ -28,10 +29,10 @@ RELATED = {
 JUMP_LIMITS = {
     "cht": 16,
     "egt": 45,
-    "oil_pressure": .7,
+    "oil_pressure": 0.7,
     "oil_temperature": 12,
     "fuel_flow": 2.5,
-    "vibration": .3,
+    "vibration": 0.3,
     "battery_voltage": 1.1,
     "alternator_voltage": 1.3,
     "injection_timing": 2.2,
@@ -55,14 +56,17 @@ class SensorTrustEngine:
         trust = {}
         for key in LIMITS:
             severity = self._normalized(residuals, key)
-            corroboration = max((self._normalized(residuals, other) for other in RELATED.get(key, ())), default=0.0)
+            corroboration = max(
+                (self._normalized(residuals, other) for other in RELATED.get(key, ())),
+                default=0.0,
+            )
 
             score = 98.0
-            if severity > .65:
+            if severity > 0.65:
                 # Isolated disagreement is suspicious. Corroborated disagreement
                 # is evidence of a real engine condition, not sensor failure.
-                isolation = max(0.0, severity - .55 * corroboration)
-                score -= min(58.0, 42.0 * isolation ** 1.25)
+                isolation = max(0.0, severity - 0.55 * corroboration)
+                score -= min(58.0, 42.0 * isolation**1.25)
 
             if previous and key in previous:
                 delta = abs(float(t[key]) - float(previous[key]))
@@ -94,14 +98,14 @@ class SensorTrustEngine:
             ts = t.get("timestamp")
             if isinstance(ts, str):
                 ts = datetime.fromisoformat(ts.replace("Z", "+00:00"))
-            age = abs((datetime.now(timezone.utc) - ts).total_seconds())
+            age = abs((datetime.now(UTC) - ts).total_seconds())
             freshness = max(0.0, 100 - age * 12)
         except Exception:
             freshness = 75.0
 
         integrity = sum(trust.values()) / max(1, len(trust))
-        signal_quality = max(45.0, min(100.0, 94 - (100 - integrity) * .20))
-        overall = .34 * complete + .22 * freshness + .30 * integrity + .14 * signal_quality
+        signal_quality = max(45.0, min(100.0, 94 - (100 - integrity) * 0.20))
+        overall = 0.34 * complete + 0.22 * freshness + 0.30 * integrity + 0.14 * signal_quality
         label = "GOOD" if overall >= 88 else "REVIEW" if overall >= 70 else "POOR"
         return {
             "completeness": complete,

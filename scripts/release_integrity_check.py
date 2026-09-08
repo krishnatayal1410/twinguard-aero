@@ -18,29 +18,42 @@ package = json.loads((FRONTEND / "package.json").read_text())
 core = (ROOT / "backend/app/core.py").read_text()
 match = re.search(r'version:\s*str\s*=\s*"([^"]+)"', core)
 require(bool(match), "backend version not found")
-require(package["version"] == match.group(1), f"frontend/backend version mismatch: {package['version']} vs {match.group(1)}")
+require(
+    package["version"] == match.group(1),
+    f"frontend/backend version mismatch: {package['version']} vs {match.group(1)}",
+)
 
 index = (FRONTEND / "index.html").read_text()
 for needle in [
     '<meta name="description"',
     '<link rel="canonical"',
-    'application/ld+json',
-    'og:title',
-    'twitter:card',
-    '/manifest.webmanifest',
+    "application/ld+json",
+    "og:title",
+    "twitter:card",
+    "/manifest.webmanifest",
 ]:
     require(needle in index, f"missing SEO marker {needle}")
 
-for path in [FRONTEND / "public/robots.txt", FRONTEND / "public/sitemap.xml", FRONTEND / "public/manifest.webmanifest"]:
+for path in [
+    FRONTEND / "public/robots.txt",
+    FRONTEND / "public/sitemap.xml",
+    FRONTEND / "public/manifest.webmanifest",
+]:
     require(path.exists(), f"missing SEO file {path.relative_to(ROOT)}")
 
 app = (SRC / "App.tsx").read_text()
-require('MaintenanceDeck' in app and '["maintenance","Maintenance"' in app, "Maintenance page is not routed")
-require('ENGINE TG-001' not in app, "legacy engine identifier remains in App")
+require(
+    "MaintenanceDeck" in app and re.search(r'\[\s*"maintenance"\s*,\s*"Maintenance"', app) is not None,
+    "Maintenance page is not routed",
+)
+require("ENGINE TG-001" not in app, "legacy engine identifier remains in App")
 require('"Endurance Patrol"' not in app, "fake pre-analysis mission label remains in App")
 
 api = (SRC / "services/twinApi.ts").read_text()
-require('getReplaySamples' in api and '/samples' in api, "persisted replay sample API is not wired")
+require(
+    "getReplaySamples" in api and "/samples" in api,
+    "persisted replay sample API is not wired",
+)
 
 demo = (SRC / "demo/demoRuntime.ts").read_text()
 for key in [
@@ -57,8 +70,14 @@ for legacy in ["oil_pressure_per_minute", "cht_per_minute", "health_per_minute"]
 
 # Internal oil-pressure telemetry is in bar, while the UI converts rates to kPa/min.
 # A -4.1 bar/min demo rate would render as -410 kPa/min, so guard the corrected scale.
-require('-4.1*progress' not in demo, "hosted-demo oil-pressure trend is 100x too large")
-require('-.041*progress' in demo, "hosted-demo oil-pressure trend unit guard is missing")
+require(
+    re.search(r"-\s*4\.1\s*\*\s*progress", demo) is None,
+    "hosted-demo oil-pressure trend is 100x too large",
+)
+require(
+    re.search(r"-\s*0?\.041\s*\*\s*progress", demo) is not None,
+    "hosted-demo oil-pressure trend unit guard is missing",
+)
 
 bad_patterns = [
     r"\br\.oil_pressure\b",
@@ -72,9 +91,19 @@ bad_patterns = [
 for path in SRC.rglob("*.tsx"):
     text = path.read_text()
     for pattern in bad_patterns:
-        require(not re.search(pattern, text), f"legacy residual access {pattern} in {path.relative_to(ROOT)}")
+        require(
+            not re.search(pattern, text),
+            f"legacy residual access {pattern} in {path.relative_to(ROOT)}",
+        )
 
-for path in [ROOT / ".runtime/logs/backend.log", ROOT / ".runtime/logs/frontend.log", ROOT / ".runtime/logs/simulator.log"]:
-    require(not path.exists(), f"runtime log is tracked in release tree: {path.relative_to(ROOT)}")
+for path in [
+    ROOT / ".runtime/logs/backend.log",
+    ROOT / ".runtime/logs/frontend.log",
+    ROOT / ".runtime/logs/simulator.log",
+]:
+    require(
+        not path.exists(),
+        f"runtime log is tracked in release tree: {path.relative_to(ROOT)}",
+    )
 
 print(f"TwinGuard release integrity PASS — version {package['version']}")

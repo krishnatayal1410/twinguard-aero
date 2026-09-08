@@ -1,5 +1,5 @@
 from copy import deepcopy
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from app.main import _runtime_snapshot
 
@@ -7,14 +7,17 @@ from app.main import _runtime_snapshot
 def state(timestamp=None, quality=96.0):
     return {
         "engine_id": "ENGINE-01",
-        "timestamp": (timestamp or datetime.now(timezone.utc)).isoformat(),
-        "data_quality": {"overall": quality, "label": "GOOD" if quality >= 88 else "POOR" if quality < 70 else "REVIEW"},
+        "timestamp": (timestamp or datetime.now(UTC)).isoformat(),
+        "data_quality": {
+            "overall": quality,
+            "label": "GOOD" if quality >= 88 else "POOR" if quality < 70 else "REVIEW",
+        },
         "readiness": {"status": "READY", "label": "READY", "reason": "nominal"},
     }
 
 
 def test_stale_state_forces_data_hold():
-    old = datetime.now(timezone.utc) - timedelta(seconds=60)
+    old = datetime.now(UTC) - timedelta(seconds=60)
     snapshot = _runtime_snapshot(state(timestamp=old))
     assert snapshot["runtime_validity"]["stale"] is True
     assert snapshot["runtime_validity"]["decision_eligible"] is False

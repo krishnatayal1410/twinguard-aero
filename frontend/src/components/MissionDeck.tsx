@@ -1,29 +1,522 @@
-import{Info,Leaf,Play,Route,ShieldCheck}from"lucide-react";
-import{useState}from"react";
-import{analyzeMission}from"../services/twinApi";
-import{useTwinStore}from"../store/twinStore";
-import type{MissionResult}from"../types/twin";
-import{fmt,pretty}from"./ui";
-import{EngineeringReadout,PageHeader,Panel,PanelTitle,Ring,StatusPill}from"./ReferenceUI";
+import { Info, Leaf, Play, Route, ShieldCheck } from "lucide-react";
+import { useState } from "react";
+import { analyzeMission } from "../services/twinApi";
+import { useTwinStore } from "../store/twinStore";
+import type { MissionResult } from "../types/twin";
+import { fmt, pretty } from "./ui";
+import { EngineeringReadout, PageHeader, Panel, PanelTitle, Ring, StatusPill } from "./ReferenceUI";
 
-type MissionTab="evaluation"|"whatif"|"planner";
-type MissionInput={mission_type:string;duration_hours:number;cruise_altitude_m:number;ambient_temp_c:number;average_throttle_pct:number};
-export default function MissionDeck(){
- const twin=useTwinStore(s=>s.twin),addMission=useTwinStore(s=>s.addMission),[tab,setTab]=useState<MissionTab>("evaluation"),[type,setType]=useState("endurance"),[duration,setDuration]=useState(8),[altitude,setAltitude]=useState(6000),[temp,setTemp]=useState(-5),[throttle,setThrottle]=useState(70),[result,setResult]=useState<MissionResult>(),[baseline,setBaseline]=useState<MissionResult>(),[baselineInput,setBaselineInput]=useState<MissionInput>(),[busy,setBusy]=useState(false),[error,setError]=useState("");
- const payload=(overrides:Partial<MissionInput>={}):MissionInput=>({mission_type:type,duration_hours:duration,cruise_altitude_m:altitude,ambient_temp_c:temp,average_throttle_pct:throttle,...overrides});
- const execute=async(p=payload(),preserveBaseline=true)=>{setBusy(true);setError("");try{const r=await analyzeMission(p);setResult(r);if(preserveBaseline){setBaseline(r);setBaselineInput(p)}addMission(twin?.ai.probable_fault??"normal",r);return r}catch(e:any){setError(e?.response?.data?.detail??e?.message??"Mission analysis failed");throw e}finally{setBusy(false)}};
- const run=()=>execute().catch(()=>undefined),alt=result?.lower_stress_alternative,feas=result?.mission_feasibility_index??0;
- const applyAlternative=async()=>{if(!alt)return;const p=payload({duration_hours:alt.duration_hours,cruise_altitude_m:alt.cruise_altitude_m,average_throttle_pct:alt.average_throttle_pct});setDuration(p.duration_hours);setAltitude(p.cruise_altitude_m);setThrottle(p.average_throttle_pct);await execute(p,false).catch(()=>undefined)};
- const riskTone=(risk?:string):"green"|"orange"|"red"=>risk==="LOW"?"green":risk==="MEDIUM"?"orange":"red";
- const exactResult=result&&<><div className="mission-result-top"><Ring value={feas} label="Mission Feasibility" detail={`Stress index ${fmt(result.stress_index,3)}`}/><div className="mission-risk-box"><span>Mission Risk</span><StatusPill tone={riskTone(result.overall_risk)}>{result.overall_risk}</StatusPill><small>Decision: {pretty(result.decision)}</small></div></div><div className="mission-kpis mission-kpis-exact"><div><span>Current Health</span><b>{fmt(result.current_health,2)}%</b><small>Health index</small></div><div><span>Post-Mission Health</span><b className={result.post_mission_health<70?"red-text":"green-text"}>{fmt(result.post_mission_health,2)}%</b><em>{fmt(result.post_mission_health-result.current_health,2)} points</em></div><div><span>Current RUL</span><b>{fmt(result.current_rul_hours,2)} h</b><small>{result.current_rul_interval_hours?`${fmt(result.current_rul_interval_hours.lower,2)}–${fmt(result.current_rul_interval_hours.upper,2)} h interval`:"Point estimate"}</small></div><div><span>Post-Mission RUL</span><b>{fmt(result.post_mission_rul_hours,2)} h</b><em>{fmt(result.post_mission_rul_hours-result.current_rul_hours,2)} h</em></div><div><span>Mission Margin</span><b className={(result.mission_margin_hours??0)<0?"red-text":"green-text"}>{fmt(result.mission_margin_hours,2)} h</b><small>{fmt((result.mission_margin_hours??0)*60,0)} min</small></div><div><span>Decision Horizon</span><b>{fmt(result.decision_horizon_hours,2)} h</b><small>{pretty(result.decision_horizon_status??"profile dependent")}</small></div><div><span>Projected Endurance</span><b>{fmt(result.projected_profile_endurance_hours,2)} h</b><small>Conservative profile projection</small></div><div><span>Engineering Reserve</span><b>{fmt(result.engineering_reserve_hours,2)} h</b><small>Reserve target</small></div></div><div className="analysis-note"><Info/><p>{result.explanation}</p></div>{result.risk_factors?.length?<div className="risk-factor-list">{result.risk_factors.map(x=><span key={x}>{x}</span>)}</div>:null}</>;
- return <div className="ref-page mission-ref-page"><PageHeader title="Mission Lab" subtitle="Mission evaluation, exact endurance margins and backend-scored lower-stress counterfactuals"/>
-  <div className="ref-tabs">{[["evaluation","Mission Evaluation"],["whatif","What-if Analysis"],["planner","Mission Planner"]].map(([id,label])=><button key={id} className={tab===id?"active":""} onClick={()=>setTab(id as MissionTab)}>{label}</button>)}</div>
-  {tab==="evaluation"&&<div className="mission-three-col">
-   <Panel className="mission-input"><PanelTitle title="Mission Input" subtitle="Every visible input is consumed by the Mission Reliability Twin"/><label>Mission Profile<select value={type} onChange={e=>setType(e.target.value)}><option value="endurance">Endurance Patrol</option><option value="patrol">Patrol</option><option value="high_altitude">High Altitude</option><option value="hot_weather">Hot Weather</option><option value="rapid_throttle">Rapid Throttle</option></select></label><label>Duration<input type="number" min={0.25} max={48} step={0.25} value={duration} onChange={e=>setDuration(Number(e.target.value))}/><span className="input-unit">h</span></label><label>Altitude<input type="number" min={0} max={12000} step={100} value={altitude} onChange={e=>setAltitude(Number(e.target.value))}/><span className="input-unit">m</span></label><label>Ambient Temperature<input type="number" min={-50} max={70} step={1} value={temp} onChange={e=>setTemp(Number(e.target.value))}/><span className="input-unit">°C</span></label><label>Average Throttle<input type="number" min={10} max={100} step={1} value={throttle} onChange={e=>setThrottle(Number(e.target.value))}/><span className="input-unit">%</span></label><button className="ref-primary" onClick={run} disabled={busy||!twin}><Play size={15}/>{busy?"Running Analysis…":"Run Mission Analysis"}</button>{error&&<div className="inline-error">{error}</div>}</Panel>
-   <Panel className="mission-result"><PanelTitle title="Mission Analysis Result" subtitle="Backend-computed health, RUL, stress, margin and feasibility"/>{result?exactResult:<div className="mission-empty"><ShieldCheck/><b>Ready for mission evaluation</b><p>Run the current profile to calculate exact RUL, post-mission health, reserve, mission margin and decision horizon.</p></div>}</Panel>
-   <Panel className="mission-alt"><PanelTitle title="Alternative (Lower Stress)" subtitle={alt?`${fmt(alt.duration_hours,2)} h · ${fmt(alt.cruise_altitude_m,0)} m · ${fmt(alt.average_throttle_pct,1)}% throttle`:"Generated after mission analysis"} right={<StatusPill tone="green"><Leaf size={13}/> Backend Scored</StatusPill>}/>{result&&alt?<><div className="engineering-grid one-col"><EngineeringReadout label="Projected Risk" value={alt.projected_risk??"--"}/><EngineeringReadout label="Projected Stress Index" value={fmt(alt.projected_stress_index,3)}/><EngineeringReadout label="Duration" value={fmt(alt.duration_hours,2)} unit="h"/><EngineeringReadout label="Altitude" value={fmt(alt.cruise_altitude_m,0)} unit="m"/><EngineeringReadout label="Throttle" value={fmt(alt.average_throttle_pct,1)} unit="%"/><EngineeringReadout label="Mission Margin" value={fmt(alt.mission_margin_hours,2)} unit="h"/><EngineeringReadout label="Decision Horizon" value={fmt(alt.decision_horizon_hours,2)} unit="h"/><EngineeringReadout label="Projected Endurance" value={fmt(alt.projected_profile_endurance_hours,2)} unit="h"/></div><button className="ref-primary" onClick={applyAlternative} disabled={busy}>{busy?"Applying…":"Apply Alternative & Re-run"}</button></>:<div className="mission-empty"><Leaf/><b>Lower-stress alternative</b><p>TwinGuard will generate and score a reduced-load alternative after the current mission is evaluated.</p></div>}</Panel>
-  </div>}
-  {tab==="whatif"&&<div className="tab-stack"><Panel><PanelTitle title="Current vs Lower-Stress Scenario" subtitle="Only backend-returned metrics and submitted engineering inputs are shown"/>{baseline&&baseline.lower_stress_alternative&&baselineInput?<div className="whatif-grid"><EngineeringReadout label="Baseline duration" value={fmt(baselineInput.duration_hours,2)} unit="h"/><EngineeringReadout label="Alternative duration" value={fmt(baseline.lower_stress_alternative.duration_hours,2)} unit="h"/><EngineeringReadout label="Baseline altitude" value={fmt(baselineInput.cruise_altitude_m,0)} unit="m"/><EngineeringReadout label="Alternative altitude" value={fmt(baseline.lower_stress_alternative.cruise_altitude_m,0)} unit="m"/><EngineeringReadout label="Baseline throttle" value={fmt(baselineInput.average_throttle_pct,1)} unit="%"/><EngineeringReadout label="Alternative throttle" value={fmt(baseline.lower_stress_alternative.average_throttle_pct,1)} unit="%"/><EngineeringReadout label="Baseline mission margin" value={fmt(baseline.mission_margin_hours,2)} unit="h"/><EngineeringReadout label="Alternative mission margin" value={fmt(baseline.lower_stress_alternative.mission_margin_hours,2)} unit="h"/></div>:<div className="mission-empty"><Route/><b>No baseline analysis yet</b><p>Run Mission Evaluation first, then inspect the lower-stress counterfactual here.</p></div>}</Panel>{baseline&&<Panel className="mission-comparison"><PanelTitle title="Mission Comparison"/><table className="ref-table"><thead><tr><th>Parameter</th><th>Baseline</th><th>Lower-Stress Alternative</th><th>Change</th></tr></thead><tbody><tr><td>Mission Risk</td><td>{baseline.overall_risk}</td><td>{baseline.lower_stress_alternative.projected_risk??"--"}</td><td>Backend rescored</td></tr><tr><td>Stress Index</td><td>{fmt(baseline.stress_index,3)}</td><td>{fmt(baseline.lower_stress_alternative.projected_stress_index,3)}</td><td>{fmt((baseline.lower_stress_alternative.projected_stress_index??baseline.stress_index)-baseline.stress_index,3)}</td></tr><tr><td>Mission Margin</td><td>{fmt(baseline.mission_margin_hours,2)} h</td><td>{fmt(baseline.lower_stress_alternative.mission_margin_hours,2)} h</td><td>{fmt((baseline.lower_stress_alternative.mission_margin_hours??0)-(baseline.mission_margin_hours??0),2)} h</td></tr><tr><td>Decision Horizon</td><td>{fmt(baseline.decision_horizon_hours,2)} h</td><td>{fmt(baseline.lower_stress_alternative.decision_horizon_hours,2)} h</td><td>{fmt((baseline.lower_stress_alternative.decision_horizon_hours??0)-(baseline.decision_horizon_hours??0),2)} h</td></tr></tbody></table><button className="ref-primary compact-action" onClick={applyAlternative} disabled={busy}>Apply Alternative & Re-run</button></Panel>}</div>}
-  {tab==="planner"&&<div className="tab-stack"><Panel><PanelTitle title="Mission Planner" subtitle="Preset buttons populate only parameters consumed by the backend"/><div className="planner-summary"><div><span>Profile</span><b>{pretty(type)}</b></div><div><span>Duration</span><b>{fmt(duration,2)} h</b></div><div><span>Altitude</span><b>{fmt(altitude,0)} m</b></div><div><span>Ambient</span><b>{fmt(temp,1)} °C</b></div><div><span>Throttle</span><b>{fmt(throttle,1)}%</b></div></div><div className="planner-actions"><button className="ref-outline" onClick={()=>{setType("patrol");setDuration(4);setAltitude(4200);setTemp(20);setThrottle(62)}}>Load Patrol Preset</button><button className="ref-outline" onClick={()=>{setType("endurance");setDuration(8);setAltitude(5000);setTemp(10);setThrottle(66)}}>Load Endurance Preset</button><button className="ref-outline" onClick={()=>{setType("high_altitude");setDuration(5);setAltitude(7200);setTemp(-10);setThrottle(76)}}>Load High-Altitude Preset</button><button className="ref-primary" onClick={()=>{setTab("evaluation");run()}} disabled={busy||!twin}>Analyze Planned Mission</button></div></Panel></div>}
- </div>
+type MissionTab = "evaluation" | "whatif" | "planner";
+type MissionInput = {
+  mission_type: string;
+  duration_hours: number;
+  cruise_altitude_m: number;
+  ambient_temp_c: number;
+  average_throttle_pct: number;
+};
+export default function MissionDeck() {
+  const twin = useTwinStore((s) => s.twin),
+    addMission = useTwinStore((s) => s.addMission),
+    [tab, setTab] = useState<MissionTab>("evaluation"),
+    [type, setType] = useState("endurance"),
+    [duration, setDuration] = useState(8),
+    [altitude, setAltitude] = useState(6000),
+    [temp, setTemp] = useState(-5),
+    [throttle, setThrottle] = useState(70),
+    [result, setResult] = useState<MissionResult>(),
+    [baseline, setBaseline] = useState<MissionResult>(),
+    [baselineInput, setBaselineInput] = useState<MissionInput>(),
+    [busy, setBusy] = useState(false),
+    [error, setError] = useState("");
+  const payload = (overrides: Partial<MissionInput> = {}): MissionInput => ({
+    mission_type: type,
+    duration_hours: duration,
+    cruise_altitude_m: altitude,
+    ambient_temp_c: temp,
+    average_throttle_pct: throttle,
+    ...overrides,
+  });
+  const execute = async (p = payload(), preserveBaseline = true) => {
+    setBusy(true);
+    setError("");
+    try {
+      const r = await analyzeMission(p);
+      setResult(r);
+      if (preserveBaseline) {
+        setBaseline(r);
+        setBaselineInput(p);
+      }
+      addMission(twin?.ai.probable_fault ?? "normal", r);
+      return r;
+    } catch (e: any) {
+      setError(e?.response?.data?.detail ?? e?.message ?? "Mission analysis failed");
+      throw e;
+    } finally {
+      setBusy(false);
+    }
+  };
+  const run = () => execute().catch(() => undefined),
+    alt = result?.lower_stress_alternative,
+    feas = result?.mission_feasibility_index ?? 0;
+  const applyAlternative = async () => {
+    if (!alt) return;
+    const p = payload({
+      duration_hours: alt.duration_hours,
+      cruise_altitude_m: alt.cruise_altitude_m,
+      average_throttle_pct: alt.average_throttle_pct,
+    });
+    setDuration(p.duration_hours);
+    setAltitude(p.cruise_altitude_m);
+    setThrottle(p.average_throttle_pct);
+    await execute(p, false).catch(() => undefined);
+  };
+  const riskTone = (risk?: string): "green" | "orange" | "red" =>
+    risk === "LOW" ? "green" : risk === "MEDIUM" ? "orange" : "red";
+  const exactResult = result && (
+    <>
+      <div className="mission-result-top">
+        <Ring
+          value={feas}
+          label="Mission Feasibility"
+          detail={`Stress index ${fmt(result.stress_index, 3)}`}
+        />
+        <div className="mission-risk-box">
+          <span>Mission Risk</span>
+          <StatusPill tone={riskTone(result.overall_risk)}>{result.overall_risk}</StatusPill>
+          <small>Decision: {pretty(result.decision)}</small>
+        </div>
+      </div>
+      <div className="mission-kpis mission-kpis-exact">
+        <div>
+          <span>Current Health</span>
+          <b>{fmt(result.current_health, 2)}%</b>
+          <small>Health index</small>
+        </div>
+        <div>
+          <span>Post-Mission Health</span>
+          <b className={result.post_mission_health < 70 ? "red-text" : "green-text"}>
+            {fmt(result.post_mission_health, 2)}%
+          </b>
+          <em>{fmt(result.post_mission_health - result.current_health, 2)} points</em>
+        </div>
+        <div>
+          <span>Current RUL</span>
+          <b>{fmt(result.current_rul_hours, 2)} h</b>
+          <small>
+            {result.current_rul_interval_hours
+              ? `${fmt(result.current_rul_interval_hours.lower, 2)}–${fmt(result.current_rul_interval_hours.upper, 2)} h interval`
+              : "Point estimate"}
+          </small>
+        </div>
+        <div>
+          <span>Post-Mission RUL</span>
+          <b>{fmt(result.post_mission_rul_hours, 2)} h</b>
+          <em>{fmt(result.post_mission_rul_hours - result.current_rul_hours, 2)} h</em>
+        </div>
+        <div>
+          <span>Mission Margin</span>
+          <b className={(result.mission_margin_hours ?? 0) < 0 ? "red-text" : "green-text"}>
+            {fmt(result.mission_margin_hours, 2)} h
+          </b>
+          <small>{fmt((result.mission_margin_hours ?? 0) * 60, 0)} min</small>
+        </div>
+        <div>
+          <span>Decision Horizon</span>
+          <b>{fmt(result.decision_horizon_hours, 2)} h</b>
+          <small>{pretty(result.decision_horizon_status ?? "profile dependent")}</small>
+        </div>
+        <div>
+          <span>Projected Endurance</span>
+          <b>{fmt(result.projected_profile_endurance_hours, 2)} h</b>
+          <small>Conservative profile projection</small>
+        </div>
+        <div>
+          <span>Engineering Reserve</span>
+          <b>{fmt(result.engineering_reserve_hours, 2)} h</b>
+          <small>Reserve target</small>
+        </div>
+      </div>
+      <div className="analysis-note">
+        <Info />
+        <p>{result.explanation}</p>
+      </div>
+      {result.risk_factors?.length ? (
+        <div className="risk-factor-list">
+          {result.risk_factors.map((x) => (
+            <span key={x}>{x}</span>
+          ))}
+        </div>
+      ) : null}
+    </>
+  );
+  return (
+    <div className="ref-page mission-ref-page">
+      <PageHeader
+        title="Mission Lab"
+        subtitle="Mission evaluation, exact endurance margins and backend-scored lower-stress counterfactuals"
+      />
+      <div className="ref-tabs">
+        {[
+          ["evaluation", "Mission Evaluation"],
+          ["whatif", "What-if Analysis"],
+          ["planner", "Mission Planner"],
+        ].map(([id, label]) => (
+          <button key={id} className={tab === id ? "active" : ""} onClick={() => setTab(id as MissionTab)}>
+            {label}
+          </button>
+        ))}
+      </div>
+      {tab === "evaluation" && (
+        <div className="mission-three-col">
+          <Panel className="mission-input">
+            <PanelTitle
+              title="Mission Input"
+              subtitle="Every visible input is consumed by the Mission Reliability Twin"
+            />
+            <label>
+              Mission Profile
+              <select value={type} onChange={(e) => setType(e.target.value)}>
+                <option value="endurance">Endurance Patrol</option>
+                <option value="patrol">Patrol</option>
+                <option value="high_altitude">High Altitude</option>
+                <option value="hot_weather">Hot Weather</option>
+                <option value="rapid_throttle">Rapid Throttle</option>
+              </select>
+            </label>
+            <label>
+              Duration
+              <input
+                type="number"
+                min={0.25}
+                max={48}
+                step={0.25}
+                value={duration}
+                onChange={(e) => setDuration(Number(e.target.value))}
+              />
+              <span className="input-unit">h</span>
+            </label>
+            <label>
+              Altitude
+              <input
+                type="number"
+                min={0}
+                max={12000}
+                step={100}
+                value={altitude}
+                onChange={(e) => setAltitude(Number(e.target.value))}
+              />
+              <span className="input-unit">m</span>
+            </label>
+            <label>
+              Ambient Temperature
+              <input
+                type="number"
+                min={-50}
+                max={70}
+                step={1}
+                value={temp}
+                onChange={(e) => setTemp(Number(e.target.value))}
+              />
+              <span className="input-unit">°C</span>
+            </label>
+            <label>
+              Average Throttle
+              <input
+                type="number"
+                min={10}
+                max={100}
+                step={1}
+                value={throttle}
+                onChange={(e) => setThrottle(Number(e.target.value))}
+              />
+              <span className="input-unit">%</span>
+            </label>
+            <button className="ref-primary" onClick={run} disabled={busy || !twin}>
+              <Play size={15} />
+              {busy ? "Running Analysis…" : "Run Mission Analysis"}
+            </button>
+            {error && <div className="inline-error">{error}</div>}
+          </Panel>
+          <Panel className="mission-result">
+            <PanelTitle
+              title="Mission Analysis Result"
+              subtitle="Backend-computed health, RUL, stress, margin and feasibility"
+            />
+            {result ? (
+              exactResult
+            ) : (
+              <div className="mission-empty">
+                <ShieldCheck />
+                <b>Ready for mission evaluation</b>
+                <p>
+                  Run the current profile to calculate exact RUL, post-mission health, reserve, mission margin
+                  and decision horizon.
+                </p>
+              </div>
+            )}
+          </Panel>
+          <Panel className="mission-alt">
+            <PanelTitle
+              title="Alternative (Lower Stress)"
+              subtitle={
+                alt
+                  ? `${fmt(alt.duration_hours, 2)} h · ${fmt(alt.cruise_altitude_m, 0)} m · ${fmt(alt.average_throttle_pct, 1)}% throttle`
+                  : "Generated after mission analysis"
+              }
+              right={
+                <StatusPill tone="green">
+                  <Leaf size={13} /> Backend Scored
+                </StatusPill>
+              }
+            />
+            {result && alt ? (
+              <>
+                <div className="engineering-grid one-col">
+                  <EngineeringReadout label="Projected Risk" value={alt.projected_risk ?? "--"} />
+                  <EngineeringReadout
+                    label="Projected Stress Index"
+                    value={fmt(alt.projected_stress_index, 3)}
+                  />
+                  <EngineeringReadout label="Duration" value={fmt(alt.duration_hours, 2)} unit="h" />
+                  <EngineeringReadout label="Altitude" value={fmt(alt.cruise_altitude_m, 0)} unit="m" />
+                  <EngineeringReadout label="Throttle" value={fmt(alt.average_throttle_pct, 1)} unit="%" />
+                  <EngineeringReadout
+                    label="Mission Margin"
+                    value={fmt(alt.mission_margin_hours, 2)}
+                    unit="h"
+                  />
+                  <EngineeringReadout
+                    label="Decision Horizon"
+                    value={fmt(alt.decision_horizon_hours, 2)}
+                    unit="h"
+                  />
+                  <EngineeringReadout
+                    label="Projected Endurance"
+                    value={fmt(alt.projected_profile_endurance_hours, 2)}
+                    unit="h"
+                  />
+                </div>
+                <button className="ref-primary" onClick={applyAlternative} disabled={busy}>
+                  {busy ? "Applying…" : "Apply Alternative & Re-run"}
+                </button>
+              </>
+            ) : (
+              <div className="mission-empty">
+                <Leaf />
+                <b>Lower-stress alternative</b>
+                <p>
+                  TwinGuard will generate and score a reduced-load alternative after the current mission is
+                  evaluated.
+                </p>
+              </div>
+            )}
+          </Panel>
+        </div>
+      )}
+      {tab === "whatif" && (
+        <div className="tab-stack">
+          <Panel>
+            <PanelTitle
+              title="Current vs Lower-Stress Scenario"
+              subtitle="Only backend-returned metrics and submitted engineering inputs are shown"
+            />
+            {baseline && baseline.lower_stress_alternative && baselineInput ? (
+              <div className="whatif-grid">
+                <EngineeringReadout
+                  label="Baseline duration"
+                  value={fmt(baselineInput.duration_hours, 2)}
+                  unit="h"
+                />
+                <EngineeringReadout
+                  label="Alternative duration"
+                  value={fmt(baseline.lower_stress_alternative.duration_hours, 2)}
+                  unit="h"
+                />
+                <EngineeringReadout
+                  label="Baseline altitude"
+                  value={fmt(baselineInput.cruise_altitude_m, 0)}
+                  unit="m"
+                />
+                <EngineeringReadout
+                  label="Alternative altitude"
+                  value={fmt(baseline.lower_stress_alternative.cruise_altitude_m, 0)}
+                  unit="m"
+                />
+                <EngineeringReadout
+                  label="Baseline throttle"
+                  value={fmt(baselineInput.average_throttle_pct, 1)}
+                  unit="%"
+                />
+                <EngineeringReadout
+                  label="Alternative throttle"
+                  value={fmt(baseline.lower_stress_alternative.average_throttle_pct, 1)}
+                  unit="%"
+                />
+                <EngineeringReadout
+                  label="Baseline mission margin"
+                  value={fmt(baseline.mission_margin_hours, 2)}
+                  unit="h"
+                />
+                <EngineeringReadout
+                  label="Alternative mission margin"
+                  value={fmt(baseline.lower_stress_alternative.mission_margin_hours, 2)}
+                  unit="h"
+                />
+              </div>
+            ) : (
+              <div className="mission-empty">
+                <Route />
+                <b>No baseline analysis yet</b>
+                <p>Run Mission Evaluation first, then inspect the lower-stress counterfactual here.</p>
+              </div>
+            )}
+          </Panel>
+          {baseline && (
+            <Panel className="mission-comparison">
+              <PanelTitle title="Mission Comparison" />
+              <table className="ref-table">
+                <thead>
+                  <tr>
+                    <th>Parameter</th>
+                    <th>Baseline</th>
+                    <th>Lower-Stress Alternative</th>
+                    <th>Change</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>Mission Risk</td>
+                    <td>{baseline.overall_risk}</td>
+                    <td>{baseline.lower_stress_alternative.projected_risk ?? "--"}</td>
+                    <td>Backend rescored</td>
+                  </tr>
+                  <tr>
+                    <td>Stress Index</td>
+                    <td>{fmt(baseline.stress_index, 3)}</td>
+                    <td>{fmt(baseline.lower_stress_alternative.projected_stress_index, 3)}</td>
+                    <td>
+                      {fmt(
+                        (baseline.lower_stress_alternative.projected_stress_index ?? baseline.stress_index) -
+                          baseline.stress_index,
+                        3,
+                      )}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>Mission Margin</td>
+                    <td>{fmt(baseline.mission_margin_hours, 2)} h</td>
+                    <td>{fmt(baseline.lower_stress_alternative.mission_margin_hours, 2)} h</td>
+                    <td>
+                      {fmt(
+                        (baseline.lower_stress_alternative.mission_margin_hours ?? 0) -
+                          (baseline.mission_margin_hours ?? 0),
+                        2,
+                      )}{" "}
+                      h
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>Decision Horizon</td>
+                    <td>{fmt(baseline.decision_horizon_hours, 2)} h</td>
+                    <td>{fmt(baseline.lower_stress_alternative.decision_horizon_hours, 2)} h</td>
+                    <td>
+                      {fmt(
+                        (baseline.lower_stress_alternative.decision_horizon_hours ?? 0) -
+                          (baseline.decision_horizon_hours ?? 0),
+                        2,
+                      )}{" "}
+                      h
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+              <button className="ref-primary compact-action" onClick={applyAlternative} disabled={busy}>
+                Apply Alternative & Re-run
+              </button>
+            </Panel>
+          )}
+        </div>
+      )}
+      {tab === "planner" && (
+        <div className="tab-stack">
+          <Panel>
+            <PanelTitle
+              title="Mission Planner"
+              subtitle="Preset buttons populate only parameters consumed by the backend"
+            />
+            <div className="planner-summary">
+              <div>
+                <span>Profile</span>
+                <b>{pretty(type)}</b>
+              </div>
+              <div>
+                <span>Duration</span>
+                <b>{fmt(duration, 2)} h</b>
+              </div>
+              <div>
+                <span>Altitude</span>
+                <b>{fmt(altitude, 0)} m</b>
+              </div>
+              <div>
+                <span>Ambient</span>
+                <b>{fmt(temp, 1)} °C</b>
+              </div>
+              <div>
+                <span>Throttle</span>
+                <b>{fmt(throttle, 1)}%</b>
+              </div>
+            </div>
+            <div className="planner-actions">
+              <button
+                className="ref-outline"
+                onClick={() => {
+                  setType("patrol");
+                  setDuration(4);
+                  setAltitude(4200);
+                  setTemp(20);
+                  setThrottle(62);
+                }}
+              >
+                Load Patrol Preset
+              </button>
+              <button
+                className="ref-outline"
+                onClick={() => {
+                  setType("endurance");
+                  setDuration(8);
+                  setAltitude(5000);
+                  setTemp(10);
+                  setThrottle(66);
+                }}
+              >
+                Load Endurance Preset
+              </button>
+              <button
+                className="ref-outline"
+                onClick={() => {
+                  setType("high_altitude");
+                  setDuration(5);
+                  setAltitude(7200);
+                  setTemp(-10);
+                  setThrottle(76);
+                }}
+              >
+                Load High-Altitude Preset
+              </button>
+              <button
+                className="ref-primary"
+                onClick={() => {
+                  setTab("evaluation");
+                  run();
+                }}
+                disabled={busy || !twin}
+              >
+                Analyze Planned Mission
+              </button>
+            </div>
+          </Panel>
+        </div>
+      )}
+    </div>
+  );
 }
