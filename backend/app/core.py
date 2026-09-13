@@ -40,6 +40,11 @@ class Settings:
     mqtt_enabled: bool = _env_flag("MQTT_ENABLED", "0")
     mqtt_host: str = os.getenv("MQTT_HOST", "mosquitto")
     mqtt_port: int = int(os.getenv("MQTT_PORT", "1883"))
+    mqtt_username: str = os.getenv("MQTT_USERNAME", "")
+    mqtt_password: str = os.getenv("MQTT_PASSWORD", "")
+    mqtt_tls: bool = _env_flag("MQTT_TLS", "0")
+    mqtt_ca_file: str | None = os.getenv("MQTT_CA_FILE")
+
     mqtt_topic: str = os.getenv("MQTT_TOPIC", "twinguard/engine/+/telemetry")
 
     can_enabled: bool = _env_flag("CAN_ENABLED", "0")

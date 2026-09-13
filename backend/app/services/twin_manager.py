@@ -73,10 +73,12 @@ class TwinManager:
             ts = self._seconds(current.get("timestamp"))
             if ts is not None:
                 points.append((ts, float(current_source[key])))
-        if len(points) < 2:
+        if len(points) < 6:
             return 0.0
         dt = points[-1][0] - points[0][0]
-        if dt <= 0:
+        # A per-minute trend needs enough observation time to avoid amplifying
+        # a single noisy frame into an apparent rapid deterioration.
+        if dt < 5:
             return 0.0
         return (points[-1][1] - points[0][1]) / dt * 60.0
 
@@ -136,7 +138,7 @@ class TwinManager:
         ts = self._seconds(t.get("timestamp"))
         if ts is not None:
             points.append((ts, float(health["overall"])))
-        if len(points) < 2 or points[-1][0] <= points[0][0]:
+        if len(points) < 6 or points[-1][0] - points[0][0] < 5:
             return 0.0
         return (points[-1][1] - points[0][1]) / (points[-1][0] - points[0][0]) * 60.0
 

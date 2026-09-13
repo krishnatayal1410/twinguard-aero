@@ -27,6 +27,7 @@ export default function ReplayDeck() {
     listReplay()
       .then(async (m) => {
         setMissions(m);
+        setRecording(m.some((x) => x.status === "RECORDING"));
         if (m[0]) {
           setSelected(m[0]);
           await loadSamples(m[0].id);
@@ -35,10 +36,21 @@ export default function ReplayDeck() {
       .catch((e) => setNotice(e?.message ?? "Unable to load mission recordings"));
   }, [setMissions]);
   useEffect(() => {
-    if (!playing) return;
-    const id = setInterval(() => setProgress((v) => Math.min(100, v + 0.18 * speed)), 250);
+    if (!playing || samples.length < 2) return;
+    const durationMs = Date.parse(samples[samples.length - 1].timestamp) - Date.parse(samples[0].timestamp);
+    if (durationMs <= 0) {
+      setPlaying(false);
+      return;
+    }
+    let previous = performance.now();
+    const id = setInterval(() => {
+      const now = performance.now();
+      const delta = ((now - previous) / durationMs) * 100 * speed;
+      previous = now;
+      setProgress((v) => Math.min(100, v + delta));
+    }, 100);
     return () => clearInterval(id);
-  }, [playing, speed]);
+  }, [playing, speed, samples]);
   useEffect(() => {
     if (progress >= 100) setPlaying(false);
   }, [progress]);
@@ -48,10 +60,14 @@ export default function ReplayDeck() {
       try {
         const m = await startReplay(`TwinGuard Mission ${new Date().toLocaleString()}`);
         setRecording(true);
+        setPlaying(false);
+        setMissions(await listReplay());
         setSelected(m);
         setSamples([]);
         setProgress(0);
-        setNotice("Mission recording started. Live Twin samples are now being persisted.");
+        setNotice(
+          "Mission recording started. Capturing live Twin samples; end the recording to save it before refreshing.",
+        );
       } catch (e: any) {
         setNotice(e?.message ?? "Unable to start recording");
       } finally {
@@ -143,7 +159,8 @@ export default function ReplayDeck() {
               <select
                 value={selected?.id ?? ""}
                 onChange={(e) => choose(Number(e.target.value))}
-                disabled={busy}
+                disabled={busy || recording}
+                aria-label="Select recording"
               >
                 <option value="">Select recording</option>
                 {missions.map((m) => (
@@ -155,7 +172,14 @@ export default function ReplayDeck() {
             }
           />
           <div className="player-controls">
-            <button title="Play" onClick={() => setPlaying(true)} disabled={!samples.length}>
+            <button
+              title="Play"
+              onClick={() => {
+                if (progress >= 100) setProgress(0);
+                setPlaying(true);
+              }}
+              disabled={samples.length < 2 || recording}
+            >
               <Play />
             </button>
             <button title="Pause" onClick={() => setPlaying(false)}>
@@ -179,6 +203,7 @@ export default function ReplayDeck() {
               <RotateCcw />
             </button>
             <input
+              aria-label="Replay position"
               className="replay-range"
               type="range"
               min="0"
@@ -194,7 +219,11 @@ export default function ReplayDeck() {
             <strong>
               {formatTime(elapsed)} / {formatTime(durationSeconds)}
             </strong>
-            <select value={speed} onChange={(e) => setSpeed(Number(e.target.value))}>
+            <select
+              aria-label="Playback speed"
+              value={speed}
+              onChange={(e) => setSpeed(Number(e.target.value))}
+            >
               <option value={0.5}>0.5×</option>
               <option value={1}>1×</option>
               <option value={2}>2×</option>

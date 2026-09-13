@@ -1,0 +1,12 @@
+.git
+.venv
+.runtime
+.env
+.env.*
+.vercel
+frontend/node_modules
+frontend/dist
+**/__pycache__
+**/.pytest_cache
+**/*.pyc
+data/runtime

@@ -19,8 +19,11 @@ from .core import settings
 
 if settings.database_url.startswith("sqlite"):
     Path("./data/runtime").mkdir(parents=True, exist_ok=True)
+database_url = settings.database_url
+if database_url.startswith(("postgres://", "postgresql://")):
+    database_url = "postgresql+psycopg://" + database_url.split("://", 1)[1]
 engine = create_engine(
-    settings.database_url,
+    database_url,
     connect_args={"check_same_thread": False} if settings.database_url.startswith("sqlite") else {},
     pool_pre_ping=True,
 )

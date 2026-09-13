@@ -18,10 +18,12 @@ from fastapi import (
 )
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from sqlalchemy import text
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
 from .core import settings
+from .db import engine
 from .integrations.mqtt_consumer import start_mqtt, stop_mqtt
 from .integrations.unreal_udp import send_to_unreal
 from .schemas import (
@@ -34,6 +36,7 @@ from .schemas import (
 )
 from .services.auth import AuthError, session_user, signin, signout, signup
 from .services.explainability import tree_contributions
+from .services.operations import check_production, request_limiter, validate_live_sample
 from .services.twin_manager import manager
 
 log = logging.getLogger("twinguard")
@@ -43,10 +46,17 @@ clients: set[WebSocket] = set()
 
 class SecurityMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
-        if (
-            request.method in {"POST", "PUT", "PATCH"}
-            and int(request.headers.get("content-length", "0") or 0) > settings.max_body_bytes
-        ):
+        if not request_limiter.allow(request):
+            return JSONResponse(
+                {"detail": "Too many authentication attempts. Retry in a minute."},
+                429,
+                headers={"Retry-After": "60"},
+            )
+        try:
+            length = int(request.headers.get("content-length", "0") or 0)
+        except ValueError:
+            return JSONResponse({"detail": "Invalid Content-Length"}, 400)
+        if length < 0 or length > settings.max_body_bytes:
             return JSONResponse({"detail": "Request too large"}, 413)
         response = await call_next(request)
         response.headers.update(
@@ -76,7 +86,9 @@ async def broadcast(state):
 def ingest_sync(data):
     try:
         telemetry = Telemetry.model_validate(data)
-        state = manager.ingest(telemetry.model_dump())
+        with manager.lock:
+            validate_live_sample(telemetry, manager.get())
+            state = manager.ingest(telemetry.model_dump())
         send_to_unreal(state)
         return state
     except Exception as exc:
@@ -86,6 +98,7 @@ def ingest_sync(data):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    check_production()
     loop = asyncio.get_running_loop()
 
     def mqtt_ingest(data):
@@ -167,7 +180,7 @@ def _state_age_seconds(state: dict | None) -> float | None:
         ts = datetime.fromisoformat(str(state["timestamp"]).replace("Z", "+00:00"))
         if ts.tzinfo is None:
             ts = ts.replace(tzinfo=UTC)
-        return max(0.0, (datetime.now(UTC) - ts).total_seconds())
+        return (datetime.now(UTC) - ts).total_seconds()
     except Exception:
         return None
 
@@ -175,7 +188,7 @@ def _state_age_seconds(state: dict | None) -> float | None:
 def _runtime_snapshot(state: dict) -> dict:
     age = _state_age_seconds(state)
     quality = float(state.get("data_quality", {}).get("overall", 0.0))
-    stale = age is None or age > settings.telemetry_stale_seconds
+    stale = age is None or age < -5 or age > settings.telemetry_stale_seconds
     quality_ok = quality >= settings.mission_min_data_quality
     decision_eligible = not stale and quality_ok
     snapshot = dict(state)
@@ -241,7 +254,9 @@ async def telemetry(t: Telemetry, x_twinguard_ingest_key: str | None = Header(de
         raise HTTPException(401, "Invalid telemetry ingest key")
     if t.engine_id != settings.engine_id:
         raise HTTPException(403, "Engine ID is not authorized")
-    state = manager.ingest(t.model_dump())
+    with manager.lock:
+        validate_live_sample(t, manager.get())
+        state = manager.ingest(t.model_dump())
     send_to_unreal(state)
     await broadcast(state)
     return state
@@ -370,7 +385,7 @@ def replay_samples(mission_id: int, limit: int = 5000, user=Depends(require_user
 def system_status(user=Depends(require_user)):
     state = manager.get()
     age = _state_age_seconds(state)
-    stale = age is None or age > settings.telemetry_stale_seconds if state else True
+    stale = age is None or age < -5 or age > settings.telemetry_stale_seconds if state else True
     quality = float(state.get("data_quality", {}).get("overall", 0.0)) if state else 0.0
     decision_eligible = bool(state) and not stale and quality >= settings.mission_min_data_quality
     return {
@@ -420,6 +435,9 @@ async def twin_ws(ws: WebSocket, engine_id: str):
             await ws.send_json(_runtime_snapshot(manager.get()))
         while True:
             await asyncio.sleep(5)
+            if not session_user(ws.query_params.get("token")):
+                await ws.close(code=1008)
+                break
             state = manager.get()
             await ws.send_json(
                 {
@@ -434,3 +452,17 @@ async def twin_ws(ws: WebSocket, engine_id: str):
         pass
     finally:
         clients.discard(ws)
+
+
+@app.get("/ready")
+def ready():
+    try:
+        with engine.connect() as connection:
+            connection.execute(text("SELECT 1"))
+    except Exception:
+        return JSONResponse({"status": "unavailable", "database": "unavailable"}, 503)
+    return {
+        "status": "ready",
+        "database": "connected",
+        "scope": "service readiness; telemetry checked separately",
+    }

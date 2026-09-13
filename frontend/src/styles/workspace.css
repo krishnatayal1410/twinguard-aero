@@ -1,0 +1,179 @@
+.workspace-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 0 0 24px;
+  padding: 14px 18px;
+  border: 1px solid #dce6ed;
+  border-radius: 12px;
+  background: linear-gradient(110deg, #f0f8ff, #fff);
+}
+.workspace-strip > div {
+  display: grid;
+  grid-template-columns: 10px 1fr;
+  gap: 4px 9px;
+  align-items: center;
+  min-width: 0;
+}
+.workspace-strip strong {
+  font-size: 12px;
+  color: #203f5f;
+}
+.workspace-strip small {
+  grid-column: 2;
+  font-size: 11px;
+  color: #61758b;
+}
+.stream-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #15956c;
+  box-shadow: 0 0 0 4px #15956c16;
+}
+.stream-dot.hold {
+  background: #d18b14;
+}
+.workspace-strip nav {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.workspace-strip a {
+  padding: 8px 11px;
+  border-radius: 7px;
+  border: 1px solid #dce6ed;
+  background: #fff;
+  color: #234e77;
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  transition:
+    background 0.15s,
+    transform 0.15s;
+}
+.workspace-strip a:hover {
+  background: #e7f2ff;
+  transform: translateY(-1px);
+}
+.workspace-strip a:focus-visible,
+button:focus-visible,
+a:focus-visible {
+  outline: 3px solid #5598ef;
+  outline-offset: 3px;
+}
+.settings-notice[role="status"] {
+  overflow-wrap: anywhere;
+}
+@media (max-width: 900px) {
+  .workspace-strip {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .workspace-strip nav {
+    width: 100%;
+  }
+  .workspace-strip a {
+    flex: 1;
+    text-align: center;
+    white-space: nowrap;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  .workspace-strip a:hover {
+    transform: none;
+  }
+}
+/* Give the model a full inspection stage instead of squeezing it between readouts. */
+.digital-page .dt-top-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.digital-page .blueprint-panel {
+  grid-column: 1/-1;
+  grid-row: 1;
+}
+.digital-page .blueprint-stage {
+  height: 560px;
+}
+.digital-page .twin-status > div:not(.sync) {
+  grid-template-columns: 28px minmax(100px, 1fr) minmax(0, 1.3fr);
+  gap: 10px;
+}
+.digital-page .twin-status b {
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+.digital-page .twin-status .sync b {
+  text-align: left;
+}
+.engine-toolbar {
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.engine-mode-switch,
+.engine-tool-actions {
+  flex-wrap: wrap;
+}
+.ref-page-head > div:first-child {
+  min-width: 0;
+}
+@media (max-width: 700px) {
+  .digital-page .dt-top-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .digital-page .blueprint-stage {
+    height: 620px;
+  }
+  .digital-page .engine-canvas {
+    bottom: 185px;
+    top: 65px;
+  }
+  .digital-page .engine-parts {
+    top: auto;
+    bottom: 58px;
+    left: 10px;
+    right: 10px;
+    width: auto;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    padding: 8px;
+  }
+  .digital-page .engine-parts > .engine-parts-head {
+    grid-column: 1/-1;
+  }
+  .digital-page .engine-parts button {
+    min-width: 0;
+    padding: 4px;
+    font-size: 10px;
+  }
+  .engine-toolbar {
+    left: 8px;
+    right: 8px;
+    top: 8px;
+  }
+  .engine-toolbar button {
+    padding: 0 6px;
+  }
+  .engine-sliders {
+    flex-wrap: wrap;
+    right: 8px;
+    left: 8px;
+    bottom: 8px;
+  }
+  .ref-page-head {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .ref-asset-chip {
+    max-width: 100%;
+  }
+}

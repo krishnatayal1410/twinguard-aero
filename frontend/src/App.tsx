@@ -23,6 +23,8 @@ import "./styles/reference.css";
 import "./styles/functional.css";
 import "./styles/interactions.css";
 import "./styles/design-v4.css";
+import "./styles/workspace.css";
+import { navigate, readRoute, pageHref } from "./utils/navigation";
 
 const CommandCenter = lazy(() => import("./components/CommandCenter")),
   DigitalTwinDeck = lazy(() => import("./components/DigitalTwinDeck")),
@@ -58,6 +60,15 @@ export default function App() {
     [clock, setClock] = useState(new Date()),
     [authDialog, setAuthDialog] = useState<"signin" | "signup" | null>(null);
   useEffect(() => {
+    const sync = () => {
+      useTwinStore.setState({ view: readRoute().view });
+      document.querySelector(".tg-content")?.scrollTo({ top: 0 });
+      window.scrollTo({ top: 0 });
+    };
+    window.addEventListener("hashchange", sync);
+    return () => window.removeEventListener("hashchange", sync);
+  }, []);
+  useEffect(() => {
     getTwin()
       .then(setTwin)
       .catch(() => undefined);
@@ -68,10 +79,9 @@ export default function App() {
     return () => clearInterval(id);
   }, []);
   const openSettings = (tab = "system") => {
-      sessionStorage.setItem("twinguard-settings-tab", tab);
-      setView("settings");
+      navigate("settings", tab);
     },
-    decisionEligible = online && runtime?.decision_eligible !== false,
+    decisionEligible = online && !!twin && runtime?.decision_eligible === true,
     last = runs.length ? runs[runs.length - 1].result : undefined,
     mission = last?.mission_type ? String(last.mission_type).replace(/_/g, " ") : "Awaiting mission",
     engineId = twin?.engine_id ?? "ENGINE-01";
@@ -109,6 +119,7 @@ export default function App() {
             <button
               key={id}
               className={view === id ? "active" : ""}
+              aria-current={view === id ? "page" : undefined}
               onClick={() => setView(id)}
               title={label}
             >
@@ -123,6 +134,7 @@ export default function App() {
             <button
               key={id}
               className={view === id ? "active" : ""}
+              aria-current={view === id ? "page" : undefined}
               onClick={() => (id === "settings" ? openSettings() : setView(id))}
               title={label}
             >
@@ -135,7 +147,7 @@ export default function App() {
           <span className={decisionEligible ? "online" : "hold"}>
             <i /> {decisionEligible ? "ALL SYSTEMS LIVE" : "DATA HOLD"}
           </span>
-          <small>TwinGuard v4.0 · SIH Prototype</small>
+          <small>TwinGuard v4.1 · SIH Prototype</small>
         </div>
       </aside>
       <main className="tg-main">
@@ -200,8 +212,31 @@ export default function App() {
             </div>
           )}
         </header>
-        <section className="tg-content">
-          <ErrorBoundary name="TwinGuard page">
+        <section className="tg-content" id="workspace">
+          <div className="workspace-strip">
+            <div>
+              <span className={decisionEligible ? "stream-dot" : "stream-dot hold"} />
+              <strong>
+                {demo
+                  ? "Synthetic engine stream"
+                  : online
+                    ? "Backend telemetry stream"
+                    : "Connecting to telemetry"}
+              </strong>
+              <small>
+                {demo
+                  ? "Interactive prototype · no physical engine connected"
+                  : "Live ingestion · source reported in model details"}
+              </small>
+            </div>
+            <nav aria-label="Engineering shortcuts">
+              <a href={pageHref("digitalTwin")}>3D engine</a>
+              <a href={pageHref("settings", "simulator")}>Simulator</a>
+              <a href={pageHref("digitalTwin", "trends")}>Live readings</a>
+              <a href={pageHref("mission")}>Mission lab</a>
+            </nav>
+          </div>
+          <ErrorBoundary key={view} name="TwinGuard page">
             <Suspense fallback={<div className="tg-loading">Loading TwinGuard…</div>}>{screen}</Suspense>
           </ErrorBoundary>
         </section>
