@@ -11,3 +11,4 @@ data/runtime/*.db
 .vercel
 .env.local
 *.tsbuildinfo
+.env*

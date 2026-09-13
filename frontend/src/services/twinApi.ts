@@ -36,7 +36,24 @@ http.interceptors.request.use((c) => {
 
 export const getTwin = async () =>
   isHostedDemo() ? buildDemoTwin() : (await http.get<TwinState>("/twin/ENGINE-01")).data;
+let resetTimer: ReturnType<typeof setTimeout> | undefined;
+function cancelFaultReset() {
+  if (resetTimer) clearTimeout(resetTimer);
+  resetTimer = undefined;
+}
+export function scheduleFaultReset(seconds: number) {
+  cancelFaultReset();
+  if (!Number.isFinite(seconds) || seconds < 5 || seconds > 300)
+    throw new Error("Reset delay must be between 5 and 300 seconds.");
+  resetTimer = setTimeout(() => {
+    resetFault().catch(() => useResetError());
+  }, seconds * 1000);
+}
+function useResetError() {
+  window.dispatchEvent(new CustomEvent("twinguard-reset-error"));
+}
 export const setFault = async (fault: FaultName, severity: number) => {
+  cancelFaultReset();
   if (isHostedDemo()) {
     setDemoFault(fault, severity);
     return { ok: true, mode: "hosted-demo" };
@@ -44,6 +61,7 @@ export const setFault = async (fault: FaultName, severity: number) => {
   return (await http.post("/simulation/fault", { fault, severity })).data;
 };
 export const resetFault = async () => {
+  cancelFaultReset();
   if (isHostedDemo()) {
     resetDemoFault();
     return { ok: true, mode: "hosted-demo" };
@@ -91,11 +109,13 @@ export function connectTwin(
     };
   }
   const proto = location.protocol === "https:" ? "wss" : "ws",
-    host = location.port === "5173" ? `${location.hostname}:8000` : location.host;
+    host = location.host;
   let ws: WebSocket | undefined,
     stopped = false,
     retry = 900;
+  let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
   const open = () => {
+    if (stopped) return;
     const token = storedToken();
     if (!token) {
       onStatus(false);
@@ -103,10 +123,15 @@ export function connectTwin(
     }
     ws = new WebSocket(`${proto}://${host}/api/v1/ws/twin/ENGINE-01?token=${encodeURIComponent(token)}`);
     ws.onopen = () => {
+      if (stopped) {
+        ws?.close();
+        return;
+      }
       retry = 900;
       onStatus(true);
     };
     ws.onmessage = (e) => {
+      if (stopped) return;
       try {
         const x = JSON.parse(e.data);
         if (x?.telemetry) {
@@ -116,9 +141,10 @@ export function connectTwin(
       } catch {}
     };
     ws.onclose = () => {
+      if (stopped) return;
       onStatus(false);
       if (!stopped) {
-        setTimeout(open, retry);
+        reconnectTimer = setTimeout(open, retry);
         retry = Math.min(6000, retry * 1.5);
       }
     };
@@ -127,6 +153,7 @@ export function connectTwin(
   open();
   return () => {
     stopped = true;
+    if (reconnectTimer) clearTimeout(reconnectTimer);
     ws?.close();
   };
 }

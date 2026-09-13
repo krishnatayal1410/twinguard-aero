@@ -1,5 +1,5 @@
+import { useRouteTab } from "../utils/navigation";
 import { Activity, Clock3, Fuel, Gauge, Mountain, ShieldCheck, Thermometer } from "lucide-react";
-import { useState } from "react";
 import { useTwinStore } from "../store/twinStore";
 import EngineTwin from "./EngineTwin";
 import { fmt, pretty } from "./ui";
@@ -9,7 +9,11 @@ type Tab = "overview" | "expected" | "residuals" | "trends" | "model";
 export default function DigitalTwinDeck() {
   const twin = useTwinStore((s) => s.twin),
     history = useTwinStore((s) => s.history),
-    [tab, setTab] = useState<Tab>("overview");
+    [tab, setTab] = useRouteTab<Tab>(
+      "digitalTwin",
+      ["overview", "expected", "residuals", "trends", "model"],
+      "overview",
+    );
   if (!twin) return <div className="empty-screen">Waiting for synchronized telemetry…</div>;
   const t = twin.telemetry,
     e = twin.expected,
@@ -72,17 +76,17 @@ export default function DigitalTwinDeck() {
       series={[
         {
           name: "Oil pressure residual (kPa)",
-          values: (history.oil_pressure ?? []).map((v) => v * 100 - e.oil_pressure * 100),
+          values: (history.oil_pressure_residual ?? []).map((v) => v * 100),
           color: "#0d72f4",
         },
-        { name: "CHT residual (°C)", values: (history.cht ?? []).map((v) => v - e.cht), color: "#8b35ee" },
+        { name: "CHT residual (°C)", values: history.cht_residual ?? [], color: "#8b35ee" },
         {
           name: "Vibration residual ×100",
-          values: (history.vibration ?? []).map((v) => (v - e.vibration) * 100),
+          values: (history.vibration_residual ?? []).map((v) => v * 100),
           color: "#ff7a00",
         },
       ]}
-      labels={["-90s", "-75s", "-60s", "-45s", "-30s", "-15s", "now"]}
+      labels={["Earlier samples", "Latest sample"]}
     />
   );
   return (

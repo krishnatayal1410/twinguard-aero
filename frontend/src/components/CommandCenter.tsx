@@ -28,7 +28,7 @@ export default function CommandCenter() {
     ai = twin.ai,
     r = twin.residuals,
     last = runs.length ? runs[runs.length - 1].result : undefined,
-    eligible = runtime?.decision_eligible !== false,
+    eligible = useTwinStore.getState().online && runtime?.decision_eligible === true,
     fault = ai.anomaly ? pretty(ai.probable_fault) : "No active anomaly",
     faultTone = ai.anomaly ? "orange" : "green";
   const metrics = [
@@ -50,10 +50,20 @@ export default function CommandCenter() {
     },
     {
       label: "Mission readiness",
-      value: last?.decision || twin.readiness.label,
+      value: !eligible ? "DATA HOLD" : last?.decision || twin.readiness.label,
       meta: last ? fmt(last.mission_feasibility_index, 0) + "% feasibility" : twin.readiness.reason,
       icon: <CheckCircle2 />,
-      tone: eligible ? "green" : "orange",
+      tone: !eligible
+        ? "orange"
+        : last
+          ? last.overall_risk === "LOW"
+            ? "green"
+            : last.overall_risk === "MEDIUM"
+              ? "orange"
+              : "red"
+          : twin.readiness.status === "READY"
+            ? "green"
+            : "orange",
     },
     {
       label: "Active diagnosis",
@@ -165,7 +175,7 @@ export default function CommandCenter() {
             series={[
               { name: "CHT °C", values: history.cht || [], color: "#1677ff" },
               {
-                name: "Oil pressure ×100",
+                name: "Oil pressure (kPa)",
                 values: (history.oil_pressure || []).map((v) => v * 100),
                 color: "#20a47b",
               },
@@ -175,7 +185,7 @@ export default function CommandCenter() {
                 color: "#f59e0b",
               },
             ]}
-            labels={["-90s", "-75s", "-60s", "-45s", "-30s", "-15s", "now"]}
+            labels={["Earlier samples", "Latest sample"]}
           />
           <div className="telemetry-strip">
             <div>

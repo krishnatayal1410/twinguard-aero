@@ -1,3 +1,4 @@
+import { validateMission } from "../utils/missionValidation";
 import type {
   FaultName,
   MissionResult,
@@ -12,6 +13,49 @@ import type {
 let scenario: FaultName = "lubrication";
 let severity = 0.58;
 let tick = 16;
+const FAULT_KEY = "twinguard-demo-scenario-v1";
+const REPLAY_KEY = "twinguard-demo-replays-v1";
+const faults: FaultName[] = [
+  "normal",
+  "lubrication",
+  "overheating",
+  "cooling_degradation",
+  "vibration",
+  "sensor_drift",
+  "injector",
+  "misfire",
+  "combustion_instability",
+  "alternator_degradation",
+];
+let startedAt = Date.now() - 16 * 900;
+function saveScenario() {
+  try {
+    localStorage.setItem(FAULT_KEY, JSON.stringify({ scenario, severity, startedAt }));
+  } catch {
+    /* simulation remains usable without storage */
+  }
+}
+function readScenario() {
+  try {
+    const raw = localStorage.getItem(FAULT_KEY);
+    if (!raw) {
+      saveScenario();
+      return;
+    }
+    const saved = JSON.parse(raw);
+    if (
+      faults.includes(saved.scenario) &&
+      Number.isFinite(saved.severity) &&
+      Number.isFinite(saved.startedAt)
+    ) {
+      scenario = saved.scenario;
+      severity = Math.max(0, Math.min(1, saved.severity));
+      startedAt = saved.startedAt;
+    }
+  } catch {
+    /* ignore malformed preferences */
+  }
+}
 let latest: TwinState | undefined;
 let recording = false;
 let activeReplayId: number | undefined;
@@ -29,11 +73,15 @@ export function setDemoFault(fault: FaultName, target: number) {
   scenario = fault;
   severity = Math.max(0, Math.min(1, target));
   tick = 0;
+  startedAt = Date.now();
+  saveScenario();
 }
 export function resetDemoFault() {
   scenario = "normal";
   severity = 0;
   tick = 0;
+  startedAt = Date.now();
+  saveScenario();
 }
 export function rememberDemoTwin(t: TwinState) {
   latest = t;
@@ -144,7 +192,8 @@ function toReplaySample(t: TwinState): ReplaySample {
 }
 
 export function buildDemoTwin(): TwinState {
-  tick += 1;
+  readScenario();
+  tick = Math.max(0, (Date.now() - startedAt) / 900);
   const phase = tick / 5,
     progress = scenario === "normal" ? 0 : Math.min(1, tick / 34) * severity;
   const wave = Math.sin(phase * 0.75),
@@ -354,8 +403,8 @@ export function buildDemoTwin(): TwinState {
       validation_scope: "SYNTHETIC_PROOF_OF_CONCEPT",
     },
     readiness: {
-      status: anomaly && progress > 0.72 ? "CAUTION" : "READY",
-      label: anomaly && progress > 0.72 ? "REVIEW" : "READY",
+      status: anomaly ? "CAUTION" : "READY",
+      label: anomaly ? "REVIEW" : "READY",
       reason: anomaly
         ? "Twin synchronized; degradation evidence requires mission-level review."
         : "Twin synchronized with nominal residual behavior.",
@@ -378,6 +427,8 @@ export function buildDemoTwin(): TwinState {
 }
 
 export function demoAnalyzeMission(payload: Record<string, unknown>): MissionResult {
+  const error = validateMission(payload);
+  if (error) throw new Error(error);
   const twin = latest ?? buildDemoTwin(),
     type = (payload.mission_type ?? "endurance") as MissionType,
     duration = Math.max(0.25, Number(payload.duration_hours ?? 8)),
@@ -497,7 +548,24 @@ function summarize(samples: ReplaySample[]) {
     max_vibration: Math.max(...samples.map((x) => x.vibration)),
     anomaly_samples: samples.filter((x) => x.anomaly).length,
     faults_observed: [...new Set(samples.filter((x) => x.fault !== "normal").map((x) => x.fault))],
-    events: latest?.events ?? [],
+    events: samples.flatMap((sample, index) => {
+      const prior = samples[index - 1];
+      if (
+        prior &&
+        prior.anomaly === sample.anomaly &&
+        prior.fault === sample.fault &&
+        prior.maintenance === sample.maintenance
+      )
+        return [];
+      return [
+        {
+          timestamp: sample.timestamp,
+          type: index === 0 ? "RECORDING_BASELINE" : "STATE_TRANSITION",
+          severity: sample.anomaly ? "warning" : "info",
+          message: `Recorded ${sample.fault} condition · health ${sample.health.toFixed(1)} · maintenance ${sample.maintenance}.`,
+        },
+      ];
+    }),
   };
 }
 
@@ -525,9 +593,49 @@ function seedReplaySamples(id: number) {
   replaySamples.set(id, samples);
 }
 
+let restoredReplays = false;
+function restoreReplays() {
+  if (restoredReplays) return;
+  restoredReplays = true;
+  try {
+    const rows = JSON.parse(localStorage.getItem(REPLAY_KEY) || "[]");
+    if (!Array.isArray(rows)) return;
+    for (const row of rows.slice(0, 12)) {
+      if (
+        !Number.isSafeInteger(row.mission?.id) ||
+        row.mission.status !== "COMPLETED" ||
+        !Array.isArray(row.samples)
+      )
+        continue;
+      if (
+        !row.samples.every(
+          (x: ReplaySample) =>
+            Number.isFinite(Date.parse(x.timestamp)) && Number.isFinite(x.health) && Number.isFinite(x.rul),
+        )
+      )
+        continue;
+      missions.push(row.mission);
+      replaySamples.set(row.mission.id, row.samples.slice(-5000));
+      replaySeq = Math.max(replaySeq, row.mission.id + 1);
+    }
+  } catch {
+    /* a malformed saved recording must not prevent startup */
+  }
+}
+function persistReplays() {
+  const completed = missions.filter((m) => m.status === "COMPLETED").slice(0, 12);
+  localStorage.setItem(
+    REPLAY_KEY,
+    JSON.stringify(completed.map((mission) => ({ mission, samples: replaySamples.get(mission.id) ?? [] }))),
+  );
+}
+
 export async function demoStartReplay(label?: string) {
+  restoreReplays();
+  const active = missions.find((m) => m.id === activeReplayId);
+  if (recording && active) return active;
   recording = true;
-  const id = replaySeq++,
+  const id = Math.max(Date.now(), replaySeq++),
     m: ReplayMission = {
       id,
       engine_id: "ENGINE-01",
@@ -541,10 +649,8 @@ export async function demoStartReplay(label?: string) {
   return m;
 }
 export async function demoEndReplay() {
-  const m =
-    missions.find((x) => x.id === activeReplayId) ??
-    missions[0] ??
-    (await demoStartReplay("Hosted Demo Mission"));
+  const m = missions.find((x) => x.id === activeReplayId);
+  if (!m || !recording) throw new Error("No active recording to stop.");
   recording = false;
   activeReplayId = undefined;
   const samples = replaySamples.get(m.id) ?? [];
@@ -556,9 +662,17 @@ export async function demoEndReplay() {
   };
   const index = missions.findIndex((x) => x.id === m.id);
   if (index >= 0) missions[index] = done;
+  try {
+    persistReplays();
+  } catch {
+    throw new Error(
+      "Recording completed in this tab, but browser storage is full. Export or free storage before refreshing.",
+    );
+  }
   return done;
 }
 export async function demoListReplay() {
+  restoreReplays();
   if (!missions.length) {
     const id = 1;
     seedReplaySamples(id);
@@ -577,21 +691,22 @@ export async function demoListReplay() {
 }
 export async function demoGetReplay(id: number) {
   const all = await demoListReplay();
-  return all.find((x) => x.id === id) ?? all[0];
+  const mission = all.find((x) => x.id === id);
+  if (!mission) throw new Error("Recording not found.");
+  return mission;
 }
 export async function demoGetReplaySamples(id: number) {
-  await demoListReplay();
-  seedReplaySamples(id);
+  await demoGetReplay(id);
   return [...(replaySamples.get(id) ?? [])];
 }
 
 export function demoSystemStatus(): SystemStatus {
   return {
     service: "TwinGuard Aero Hosted Demo",
-    version: "3.2.0",
+    version: "4.1.0",
     environment: "vercel-demo",
     engine_id: "ENGINE-01",
-    database: "Hosted demo memory",
+    database: "Browser-local recordings (12 most recent)",
     models: { anomaly: false, fault: false, rul: false },
     integrations: { mqtt: false, unreal_udp: false, can: false },
     telemetry: {

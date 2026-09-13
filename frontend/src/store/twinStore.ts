@@ -1,12 +1,6 @@
 import { create } from "zustand";
-import type {
-  MissionResult,
-  ReplayMission,
-  RuntimeValidity,
-  TelemetryState,
-  TwinState,
-  ViewName,
-} from "../types/twin";
+import { navigate, readRoute } from "../utils/navigation";
+import type { MissionResult, ReplayMission, RuntimeValidity, TwinState, ViewName } from "../types/twin";
 
 interface Store {
   twin?: TwinState;
@@ -27,7 +21,17 @@ interface Store {
 }
 
 type HistoryKey =
-  "rpm" | "cht" | "egt" | "oil_pressure" | "oil_temperature" | "vibration" | "altitude" | "battery_voltage";
+  | "rpm"
+  | "cht"
+  | "egt"
+  | "oil_pressure"
+  | "oil_temperature"
+  | "vibration"
+  | "altitude"
+  | "battery_voltage"
+  | "cht_residual"
+  | "oil_pressure_residual"
+  | "vibration_residual";
 const keys: HistoryKey[] = [
   "rpm",
   "cht",
@@ -37,8 +41,15 @@ const keys: HistoryKey[] = [
   "vibration",
   "altitude",
   "battery_voltage",
+  "cht_residual",
+  "oil_pressure_residual",
+  "vibration_residual",
 ];
-const readTelemetry = (x: TelemetryState, key: HistoryKey) => Number(x[key]);
+const readHistory = (x: TwinState, key: HistoryKey) => {
+  if (key === "cht_residual" || key === "oil_pressure_residual" || key === "vibration_residual")
+    return Number(x.residuals[key]);
+  return Number(x.telemetry[key]);
+};
 const emptyHistory = (): Record<HistoryKey, number[]> => ({
   rpm: [],
   cht: [],
@@ -48,11 +59,14 @@ const emptyHistory = (): Record<HistoryKey, number[]> => ({
   vibration: [],
   altitude: [],
   battery_voltage: [],
+  cht_residual: [],
+  oil_pressure_residual: [],
+  vibration_residual: [],
 });
 
 export const useTwinStore = create<Store>((set) => ({
   online: false,
-  view: "command",
+  view: readRoute().view,
   focus: "all",
   history: emptyHistory(),
   missionRuns: [],
@@ -60,12 +74,15 @@ export const useTwinStore = create<Store>((set) => ({
   setTwin: (x) =>
     set((s) => {
       const h = { ...s.history };
-      for (const k of keys) h[k] = [...(h[k] ?? []), readTelemetry(x.telemetry, k)].slice(-90);
+      for (const k of keys) h[k] = [...(h[k] ?? []), readHistory(x, k)].slice(-90);
       return { twin: x, history: h, runtimeValidity: x.runtime_validity ?? s.runtimeValidity };
     }),
   setOnline: (online) => set({ online }),
   setRuntimeValidity: (runtimeValidity) => set({ runtimeValidity }),
-  setView: (view) => set({ view }),
+  setView: (view) => {
+    navigate(view);
+    set({ view });
+  },
   setFocus: (focus) => set({ focus }),
   addMission: (fault, result) =>
     set((s) => ({ missionRuns: [...s.missionRuns, { fault, result }].slice(-8) })),

@@ -1,4 +1,5 @@
-import { Canvas, useFrame } from "@react-three/fiber";
+import { useReducedMotion } from "framer-motion";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Html, OrbitControls, useGLTF } from "@react-three/drei";
 import {
   Box,
@@ -260,6 +261,7 @@ function Scene({
   darkStage,
   onFocus,
   fault,
+  faultActive,
 }: {
   mode: ViewMode;
   opacity: number;
@@ -272,11 +274,18 @@ function Scene({
   darkStage: boolean;
   onFocus: (m: string) => void;
   fault: ModuleName;
+  faultActive: boolean;
 }) {
   const controls = useRef<any>();
+  const { camera, size } = useThree();
   useEffect(() => {
-    controls.current?.reset();
-  }, [resetToken]);
+    const aspect = size.width / Math.max(1, size.height);
+    const distance = Math.max(1, 1.25 / aspect) * (mode === "exploded" ? 1.18 : 1);
+    camera.position.set(6.8 * distance, 3.6 * distance, 8.6 * distance);
+    camera.lookAt(0, 0, 0);
+    controls.current?.target.set(0, 0, 0);
+    controls.current?.update();
+  }, [camera, size.width, size.height, resetToken, mode]);
   return (
     <>
       <color attach="background" args={[darkStage ? "#081b2a" : "#f4f8fb"]} />
@@ -295,7 +304,7 @@ function Scene({
           onFocus={onFocus}
         />
         <ModelLabels visible={labels} mode={mode} explodeAmount={explodeAmount} />
-        <FaultMarker module={fault} active={mode === "xray"} />
+        <FaultMarker module={fault} active={mode === "xray" && faultActive} />
       </Suspense>
       <gridHelper
         args={[16, 32, darkStage ? "#1c5576" : "#c7d8e5", darkStage ? "#102f43" : "#e5edf3"]}
@@ -308,7 +317,7 @@ function Scene({
         enableDamping
         dampingFactor={0.07}
         minDistance={4}
-        maxDistance={14}
+        maxDistance={32}
         autoRotate={autoRotate}
         autoRotateSpeed={0.6}
       />
@@ -325,6 +334,7 @@ export default function EngineTwin({
   resetToken = 0,
   onFocus,
 }: Props) {
+  const reducedMotion = useReducedMotion();
   const twin = useTwinStore((state) => state.twin);
   const host = useRef<HTMLDivElement>(null);
   const [mode, setMode] = useState<ViewMode>(xray ? "xray" : explode ? "exploded" : "assembled");
@@ -440,7 +450,7 @@ export default function EngineTwin({
             mode={mode}
             opacity={opacity / 100}
             focus={focus}
-            autoRotate={autoRotate}
+            autoRotate={autoRotate && !reducedMotion}
             resetToken={reset + resetToken}
             explodeAmount={explodeAmount}
             wireframe={wireframe}
@@ -448,6 +458,7 @@ export default function EngineTwin({
             darkStage={darkStage}
             onFocus={setSelected}
             fault={fault}
+            faultActive={!!twin?.ai.anomaly}
           />
         </Canvas>
       </div>

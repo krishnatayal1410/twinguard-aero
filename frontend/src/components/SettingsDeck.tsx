@@ -1,3 +1,4 @@
+import { useRouteTab } from "../utils/navigation";
 import {
   Database,
   Download,
@@ -11,7 +12,7 @@ import {
   UserRound,
 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { getSystemStatus, resetFault, setFault } from "../services/twinApi";
+import { getSystemStatus, resetFault, setFault, scheduleFaultReset } from "../services/twinApi";
 import { signOut } from "../services/authApi";
 import { useTwinStore } from "../store/twinStore";
 import { useAuthStore } from "../store/authStore";
@@ -28,8 +29,10 @@ export default function SettingsDeck() {
     user = useAuthStore((s) => s.user),
     token = useAuthStore((s) => s.token),
     clearAuth = useAuthStore((s) => s.clear),
-    [tab, setTab] = useState<Tab>(
-      () => (sessionStorage.getItem("twinguard-settings-tab") as Tab | null) ?? "system",
+    [tab, setTab] = useRouteTab<Tab>(
+      "settings",
+      ["system", "connections", "simulator", "model", "data", "user"],
+      "system",
     ),
     [status, setStatus] = useState<SystemStatus>(),
     [scenario, setScenario] = useState<FaultName>("normal"),
@@ -38,6 +41,11 @@ export default function SettingsDeck() {
     [autoResetSeconds, setAutoResetSeconds] = useState(30),
     [busy, setBusy] = useState(false),
     [notice, setNotice] = useState("");
+  useEffect(() => {
+    const failed = () => setNotice("Automatic reset failed. Check the connection and use Reset Healthy.");
+    window.addEventListener("twinguard-reset-error", failed);
+    return () => window.removeEventListener("twinguard-reset-error", failed);
+  }, []);
   const load = async () => {
     setBusy(true);
     setNotice("");
@@ -61,11 +69,12 @@ export default function SettingsDeck() {
     setBusy(true);
     setNotice("");
     try {
+      if (autoReset && (!Number.isFinite(autoResetSeconds) || autoResetSeconds < 5 || autoResetSeconds > 300))
+        throw new Error("Reset delay must be between 5 and 300 seconds.");
       if (scenario === "normal") await resetFault();
       else await setFault(scenario, severity / 100);
       setNotice(`${pretty(scenario)} applied at ${severity}% intensity.`);
-      if (autoReset && scenario !== "normal")
-        window.setTimeout(() => resetFault().catch(() => undefined), autoResetSeconds * 1000);
+      if (autoReset && scenario !== "normal") scheduleFaultReset(autoResetSeconds);
     } catch (e: any) {
       setNotice(e?.response?.data?.detail ?? e?.message ?? "Simulator action failed");
     } finally {
@@ -95,7 +104,14 @@ export default function SettingsDeck() {
     const keep = "twinguard_session";
     for (let i = localStorage.length - 1; i >= 0; i--) {
       const k = localStorage.key(i);
-      if (k && k !== keep && k.toLowerCase().includes("twinguard")) localStorage.removeItem(k);
+      if (
+        k &&
+        k !== keep &&
+        k !== "twinguard_demo_accounts" &&
+        k !== "twinguard-demo-replays-v1" &&
+        k.toLowerCase().includes("twinguard")
+      )
+        localStorage.removeItem(k);
     }
     await resetFault().catch(() => undefined);
     setNotice("Local TwinGuard cache cleared and simulator reset.");
@@ -139,7 +155,11 @@ export default function SettingsDeck() {
           </button>
         ))}
       </div>
-      {notice && <div className="settings-notice">{notice}</div>}
+      {notice && (
+        <div className="settings-notice" role="status">
+          {notice}
+        </div>
+      )}
       {tab === "system" && (
         <>
           <div className="system-status-cards">
@@ -218,12 +238,16 @@ export default function SettingsDeck() {
             />
             <label>
               API URL
-              <input value={demo ? "Browser-hosted demo runtime" : "http://localhost:8000/api/v1"} readOnly />
+              <input value={demo ? "Browser-hosted demo runtime" : `${location.origin}/api/v1`} readOnly />
             </label>
             <label>
               WebSocket URL
               <input
-                value={demo ? "Browser simulation loop" : "ws://localhost:8000/api/v1/ws/twin/ENGINE-01"}
+                value={
+                  demo
+                    ? "Browser simulation loop"
+                    : `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api/v1/ws/twin/ENGINE-01`
+                }
                 readOnly
               />
             </label>
@@ -342,6 +366,8 @@ export default function SettingsDeck() {
                     setScenario("normal");
                     setSeverity(0);
                     setNotice("Simulator reset to healthy state.");
+                  } catch (error: any) {
+                    setNotice(error?.message ?? "Simulator reset failed.");
                   } finally {
                     setBusy(false);
                   }

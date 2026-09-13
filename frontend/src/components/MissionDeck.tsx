@@ -1,3 +1,6 @@
+import { validateMission } from "../utils/missionValidation";
+import { isHostedDemo } from "../demo/demoRuntime";
+import { useRouteTab } from "../utils/navigation";
 import { Info, Leaf, Play, Route, ShieldCheck } from "lucide-react";
 import { useState } from "react";
 import { analyzeMission } from "../services/twinApi";
@@ -15,9 +18,10 @@ type MissionInput = {
   average_throttle_pct: number;
 };
 export default function MissionDeck() {
+  const demo = isHostedDemo();
   const twin = useTwinStore((s) => s.twin),
     addMission = useTwinStore((s) => s.addMission),
-    [tab, setTab] = useState<MissionTab>("evaluation"),
+    [tab, setTab] = useRouteTab<MissionTab>("mission", ["evaluation", "whatif", "planner"], "evaluation"),
     [type, setType] = useState("endurance"),
     [duration, setDuration] = useState(8),
     [altitude, setAltitude] = useState(6000),
@@ -40,6 +44,8 @@ export default function MissionDeck() {
     setBusy(true);
     setError("");
     try {
+      const invalid = validateMission(p);
+      if (invalid) throw new Error(invalid);
       const r = await analyzeMission(p);
       setResult(r);
       if (preserveBaseline) {
@@ -153,7 +159,7 @@ export default function MissionDeck() {
     <div className="ref-page mission-ref-page">
       <PageHeader
         title="Mission Lab"
-        subtitle="Mission evaluation, exact endurance margins and backend-scored lower-stress counterfactuals"
+        subtitle="Mission evaluation, exact endurance margins and model-scored lower-stress counterfactuals"
       />
       <div className="ref-tabs">
         {[
@@ -240,7 +246,11 @@ export default function MissionDeck() {
           <Panel className="mission-result">
             <PanelTitle
               title="Mission Analysis Result"
-              subtitle="Backend-computed health, RUL, stress, margin and feasibility"
+              subtitle={
+                demo
+                  ? "Synthetic model estimates · not physical engine validation"
+                  : "Backend-computed health, RUL, stress, margin and feasibility"
+              }
             />
             {result ? (
               exactResult
@@ -265,7 +275,7 @@ export default function MissionDeck() {
               }
               right={
                 <StatusPill tone="green">
-                  <Leaf size={13} /> Backend Scored
+                  <Leaf size={13} /> Model Scored
                 </StatusPill>
               }
             />
@@ -318,7 +328,7 @@ export default function MissionDeck() {
           <Panel>
             <PanelTitle
               title="Current vs Lower-Stress Scenario"
-              subtitle="Only backend-returned metrics and submitted engineering inputs are shown"
+              subtitle="Only model-returned metrics and submitted engineering inputs are shown"
             />
             {baseline && baseline.lower_stress_alternative && baselineInput ? (
               <div className="whatif-grid">
@@ -388,7 +398,7 @@ export default function MissionDeck() {
                     <td>Mission Risk</td>
                     <td>{baseline.overall_risk}</td>
                     <td>{baseline.lower_stress_alternative.projected_risk ?? "--"}</td>
-                    <td>Backend rescored</td>
+                    <td>Model rescored</td>
                   </tr>
                   <tr>
                     <td>Stress Index</td>
@@ -442,7 +452,7 @@ export default function MissionDeck() {
           <Panel>
             <PanelTitle
               title="Mission Planner"
-              subtitle="Preset buttons populate only parameters consumed by the backend"
+              subtitle="Preset buttons populate only parameters consumed by the model"
             />
             <div className="planner-summary">
               <div>
