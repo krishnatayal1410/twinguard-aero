@@ -1,3 +1,4 @@
+import { apiBase, isDemo } from "./runtimeConfig";
 import axios from "axios";
 import type { AuthResponse, AuthUser } from "../types/twin";
 
@@ -15,13 +16,11 @@ export function storedToken() {
 }
 
 const authHttp = axios.create({
-  baseURL: "/api/v1",
+  baseURL: apiBase,
   timeout: 6000,
   headers: { "X-Requested-With": "TwinGuard-Aero" },
 });
-const hostedDemo = () =>
-  typeof window !== "undefined" &&
-  (import.meta.env.VITE_TWINGUARD_DEMO_MODE === "1" || window.location.hostname.endsWith(".vercel.app"));
+const hostedDemo = isDemo;
 
 function accounts(): DemoAccount[] {
   try {

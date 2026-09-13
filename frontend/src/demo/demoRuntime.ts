@@ -1,3 +1,4 @@
+import { isDemo } from "../services/runtimeConfig";
 import { validateMission } from "../utils/missionValidation";
 import type {
   FaultName,
@@ -63,9 +64,7 @@ let replaySeq = 2;
 const missions: ReplayMission[] = [];
 const replaySamples = new Map<number, ReplaySample[]>();
 
-export const isHostedDemo = () =>
-  typeof window !== "undefined" &&
-  (import.meta.env.VITE_TWINGUARD_DEMO_MODE === "1" || window.location.hostname.endsWith(".vercel.app"));
+export const isHostedDemo = isDemo;
 const clamp = (v: number, a = 0, b = 100) => Math.max(a, Math.min(b, v));
 const human = (s: string) => s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 

@@ -1,3 +1,4 @@
+import { apiBase, twinSocketUrl } from "./runtimeConfig";
 import axios from "axios";
 import type {
   FaultName,
@@ -24,7 +25,7 @@ import {
 } from "../demo/demoRuntime";
 
 export const http = axios.create({
-  baseURL: "/api/v1",
+  baseURL: apiBase,
   timeout: 5000,
   headers: { "X-Requested-With": "TwinGuard-Aero" },
 });
@@ -108,8 +109,6 @@ export function connectTwin(
       window.clearInterval(id);
     };
   }
-  const proto = location.protocol === "https:" ? "wss" : "ws",
-    host = location.host;
   let ws: WebSocket | undefined,
     stopped = false,
     retry = 900;
@@ -121,7 +120,7 @@ export function connectTwin(
       onStatus(false);
       return;
     }
-    ws = new WebSocket(`${proto}://${host}/api/v1/ws/twin/ENGINE-01?token=${encodeURIComponent(token)}`);
+    ws = new WebSocket(twinSocketUrl(token));
     ws.onopen = () => {
       if (stopped) {
         ws?.close();

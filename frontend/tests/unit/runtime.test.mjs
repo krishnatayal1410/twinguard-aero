@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 const dir = await mkdtemp(join(tmpdir(), 'twinguard-test-'));
 const file = join(dir, 'runtime.mjs');
-await build({entryPoints:['src/demo/demoRuntime.ts'],outfile:file,bundle:true,format:'esm',platform:'node',define:{'import.meta.env.VITE_TWINGUARD_DEMO_MODE':'"1"'}});
+await build({entryPoints:['src/demo/demoRuntime.ts'],outfile:file,bundle:true,format:'esm',platform:'node',define:{'import.meta.env.VITE_TWINGUARD_DEMO_MODE':'"1"','import.meta.env.VITE_TWINGUARD_API_ORIGIN':'""'}});
 const values = new Map();
 globalThis.localStorage = {getItem:k=>values.get(k)??null,setItem:(k,v)=>values.set(k,v),removeItem:k=>values.delete(k)};
 globalThis.location = {hostname:'localhost',origin:'http://localhost'};
