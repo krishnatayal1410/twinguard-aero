@@ -167,7 +167,7 @@ if [ "$TWINGUARD_NATIVE_ML" = "1" ]; then
   echo " Native ML: enabled"
 else
   echo " Stable local mode: enabled"
-  echo " Isolation Forest + engineering fault/RUL fallback"
+  echo " Engineering diagnostic and RUL fallback; native models disabled"
 fi
 echo
 echo " Logs: $ROOT/.runtime/logs"
