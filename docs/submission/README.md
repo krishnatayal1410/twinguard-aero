@@ -24,11 +24,15 @@ The public PS listing displayed **30 September 2026** on 26 September 2026. Conf
 
 ## Official template and rubric status
 
-The exact current template linked inside the signed-in submission form was not obtained during this preparation. No custom brief is labeled as the official template. Transfer the prepared content into the portal-downloaded template, preserve its actual instructions and required identity fields, and verify the final rendered PDF and upload size.
+The [official SIH2026 presentation template](https://sih.gov.in/letters/2026/SIH2026-IDEA-Presentation-Format.pptx) was downloaded directly and verified byte-for-byte against the existing Desktop copy. SHA-256: `ce3e5deebec2741f3383cb2dd21269cad8d9930f7c747c9903d7d4b27db14de6`. Its instructions require at most six slides including the title, the supplied template and section pointers, and PDF upload. The removable instruction slide has been excluded from the prepared six-slide draft.
+
+**Template draft:** `TwinGuard-Aero-SIH2026-Template-Draft.pptx` and its PDF preserve the official masters, layout/theme assets, logos, footer and six prescribed sections. All package checks passed against the original and all six rendered slides were inspected. The required **Team ID** is still marked **CONFIRM FROM PORTAL** because existing PS54 materials left it blank. **MINDMESH** is sourced from the existing PS54 PDF, but should match the live registration. This remains a draft until the identifier is filled and the title slide is rechecked. No submission has been made.
+
+Rebuild the deck with `python docs/submission/build_official_deck.py path/to/SIH2026-IDEA-Presentation-Format.pptx` using Python with `defusedxml` installed. The builder accepts the template path as an argument; no machine-specific source path is embedded.
 
 The accessible official college guidelines PDF is labeled **SIH 2024**, including its idea-selection section. Its emphasis on originality, credible implementation, clear presentation, usefulness, usability and future development is useful background, but it is not evidence of a 2026 weighted scoring rubric. [Official older guidelines, PDF page 20](https://sih.gov.in/letters/Guidelines-College-SPOC.pdf)
 
-Search results also surfaced a third-party site explicitly labeled a student redesign concept that asserts percentage weights and a five-slide format. Those claims were not used as official rules. No 2026 score weights, guaranteed shortlist result or unverified template slide count is asserted in this pack.
+Search results also surfaced a third-party site explicitly labeled a student redesign concept that asserts percentage weights and a five-slide format. Those claims were not used as official rules. No 2026 score weights or guaranteed shortlist result is asserted in this pack; the six-slide limit is now verified from the official template itself.
 
 ## Supporting PDF
 
@@ -40,6 +44,7 @@ Search results also surfaced a third-party site explicitly labeled a student red
 |---|---|---|
 | [Official SIH PS list](https://sih.gov.in/sih2026PS) | PS54 identity, organization/category/theme, high-level deliverable alignment and displayed deadline | Live listing may change; use the portal's selected record for final identity |
 | [Official college guidelines PDF](https://sih.gov.in/letters/Guidelines-College-SPOC.pdf) | General historical selection guidance | Document says SIH2024, not a verified 2026 rubric |
+| [Official SIH2026 template](https://sih.gov.in/letters/2026/SIH2026-IDEA-Presentation-Format.pptx) | Byte-verified template, six-slide cap, preserved section pointers and PDF format | Team ID still needs portal confirmation |
 | User-supplied screenshot | Character and PDF-size limits; visible draft button | Screenshot shows a different student-innovation challenge |
 | Repository source and docs | Implemented architecture, UI paths, model boundaries and validation utilities | Source inspection does not equal a fresh successful test run |
 

@@ -93,14 +93,15 @@ Useful diagnostic outcomes include **false alarms per operating hour**, **fault-
 | “Prototype security controls” | Threat model, independent testing and deployment approval before defence-grade claims |
 | “Intended reduction in maintenance uncertainty” | Partner measurements before quantified savings or avoided failures |
 
-## Slide content to transfer into the official template
+## Six-slide official-template mapping
 
-Use this as a content bank. The slide count and template rules below have **not** been verified for the current submission, so no arbitrary custom PDF is designated as the official upload.
+The official SIH2026 template was downloaded and byte-verified. Its six-slide cap includes the title; the instruction slide may be removed. `TwinGuard-Aero-SIH2026-Template-Draft` preserves the supplied section structure and branding.
 
-1. **Problem and specific decision:** show a gradually degrading engine and the three questions: trust, condition evidence, profile consequences.
-2. **Solution architecture:** use the flow above; distinguish current components from real-engine integration work.
-3. **Proof through one scenario:** healthy state → progressive lubrication condition → residual evidence → same mission rescored → reviewable alternative. Include screenshots from the current build with synthetic labels visible.
-4. **Technical depth and credibility:** operating-context residuals, separate Sensor Trust, temporal persistence, model provenance, DATA HOLD and honest RUL semantics.
-5. **Validation and adoption:** show the independent-recording experiment, the read-only rig gate and the staged path to calibrated operation. Add measured release evidence only after a fresh run.
+1. **Title:** PS identity, theme, software category and MINDMESH from existing PS54 material. The team ID remains explicitly unconfirmed.
+2. **Idea / proposed solution:** explain the synchronized twin, the operator problem and the connection between trust, condition and mission review.
+3. **Technical approach:** languages/frameworks, telemetry-to-review flow, hosted/local distinction and data gate.
+4. **Feasibility and viability:** current implementation, unavailable real-engine labels and the staged validation strategy.
+5. **Impact and benefits:** operator, propulsion-engineer and maintenance workflows; intended benefits clearly separated from measured outcomes.
+6. **Research and references:** official PS, NIST digital-twin resources, model-method references and the project repository.
 
-Team, institution, official PS title and other required identity fields must be copied from the actual portal/authorized team record, not invented.
+The PDF still requires the registered Team ID before submission. Preserve the official template and verify team identity against the portal. The separate evaluator brief remains a companion document, not the template-based upload.

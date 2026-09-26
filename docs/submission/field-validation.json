@@ -28,10 +28,20 @@
   "supporting_pdf": {
     "file": "TwinGuard-Aero-Evaluator-Brief.pdf",
     "pages": 6,
-    "bytes": 13454,
+    "bytes": 13442,
     "below_10_mb": true,
     "official_template": false,
     "visual_inspection": "All six pages rendered and visually inspected; no clipping or overlap observed"
   },
-  "test_performance_claims": "No fresh software pass counts or predictive performance metrics asserted in these materials."
+  "test_performance_claims": "No fresh software pass counts or predictive performance metrics asserted in these materials.",
+  "official_template_draft": {
+    "pptx": "TwinGuard-Aero-SIH2026-Template-Draft.pptx",
+    "pdf": "TwinGuard-Aero-SIH2026-Template-Draft.pdf",
+    "pages": 6,
+    "pdf_bytes": 463472,
+    "below_10_mb": true,
+    "official_template_byte_verified": true,
+    "remaining_required_field": "Team ID",
+    "ready_for_final_upload": false
+  }
 }

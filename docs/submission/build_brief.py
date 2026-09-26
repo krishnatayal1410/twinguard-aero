@@ -167,7 +167,7 @@ for i,(a,b,d) in enumerate(road):
 line(42,105,918,105)
 text('PS identity and high-level scope: sih.gov.in/sih2026PS',44,92,870,10,MUTED)
 C.linkURL('https://sih.gov.in/sih2026PS',(44,76,500,95),relative=0,thickness=0)
-text('The official current upload template has not been verified. Transfer final content into the portal-downloaded template before submission.',44,68,870,11,AMBER)
+text('A separate draft follows the verified SIH2026 template. Its team ID must be confirmed before portal submission.',44,68,870,11,AMBER)
 C.showPage()
 C.save()
 print(OUT)
