@@ -1,0 +1,67 @@
+TWINGUARD AERO | SIH26054 | DRDO
+
+1. THE PROBLEM WE ADDRESS
+
+An aero-piston engine can remain inside individual alarm limits while several related signals gradually deteriorate. Operators need to understand the combined evidence, distinguish engine degradation from an unreliable measurement, and evaluate the remaining operating margin for a proposed mission. A useful digital twin must connect these questions in one traceable workflow.
+
+TwinGuard Aero is a working software proof-of-concept for that workflow. Its central question is: given the current engine condition and the proposed mission profile, what is driving the engineering risk, what margin remains in the model, and which lower-stress alternative should an engineer evaluate?
+
+2. PROPOSED SOLUTION
+
+TwinGuard combines synchronized telemetry, an operating-condition-aware healthy reference, explainable diagnostics, simulation-derived remaining useful life (RUL), and mission-profile comparison. The operator can follow a result back to the observations and assumptions that produced it.
+
+The prototype has two clearly identified execution modes. The hosted demonstration generates deterministic synthetic telemetry in the browser so evaluators can explore the interface without a running engine or local installation. The local/Docker system runs the FastAPI backend, simulator, authenticated operator APIs, persistent storage and WebSocket updates. Hosted demonstration results must not be described as live ECU measurements.
+
+3. HOW THE DIGITAL TWIN WORKS
+
+Telemetry enters through a canonical schema with explicit engineering units, engine identity and timestamps. The live backend rejects unauthorized engine identities, stale or out-of-order measurements and invalid payloads. HTTP ingestion is implemented; MQTT and configurable CAN/DBC adapters provide integration paths for authorized hardware data.
+
+The state includes RPM, throttle, cylinder-head and exhaust-gas temperatures, oil pressure and temperature, fuel flow, vibration, battery and alternator voltages, altitude, ambient temperature, timing and operating hours. A generic low-order aero-piston surrogate calculates expected healthy values under the observed operating conditions. Observed-minus-expected residuals provide a common basis for diagnosis.
+
+The diagnostic layer combines residuals, related-channel consistency, temporal trends and anomaly persistence. Sensor Trust is assessed separately from engine health. For example, falling oil pressure corroborated by hotter oil and rising vibration supports a lubrication hypothesis; an isolated inconsistent pressure channel prompts a measurement-quality review. This distinction helps an engineer inspect the right evidence before acting.
+
+The interface exposes thermal, lubrication, mechanical, combustion, electrical and sensor health, probable conditions, evidence and maintenance guidance. It also identifies the active diagnostic mode. Transparent engineering logic is available by default. A training pipeline supports Isolation Forest anomaly detection and XGBoost fault classification/RUL regression using synthetic data. The runtime checks feature and label compatibility before accepting packaged models.
+
+4. MISSION-AWARE DECISION SUPPORT
+
+Mission Lab evaluates duration, altitude, ambient temperature, throttle and mission type alongside the current twin state. Endurance, high-altitude, hot-weather, rapid-throttle and patrol profiles apply explicit prototype stress assumptions. Outputs include a mission feasibility index, subsystem risk contributions, projected post-mission health, simulation-derived RUL margin and engineering review guidance.
+
+The same mission can be compared before and after progressive degradation. A lower-stress alternative is independently rescored so the evaluator can inspect how changed inputs affect the result. These are transparent engineering indices and simulation projections; the feasibility index is not a calibrated probability of mission success, and the RUL band is not a validated statistical confidence interval.
+
+5. DEMONSTRABLE CAPABILITIES
+
+The prototype provides a unified Command Center, an interactive aero-piston 3D view, health and fault views, Diagnostics, Mission Lab, Maintenance, Replay and system settings. The 3D representation communicates subsystem state; the analytical twin resides in the synchronized state, reference model, residual history and diagnostic/prognostic pipeline.
+
+Synthetic scenarios cover normal operation, lubrication degradation, overheating, cooling degradation, abnormal vibration, sensor drift, injector abnormality, misfire, combustion instability and alternator degradation. Fault severity develops progressively to expose changing evidence rather than only switching a static label.
+
+An Evaluation Center guides hosted-demo users through healthy-baseline capture, controlled fault injection, a baseline-versus-current comparison and observation capture. Its JSON export includes full twin state, units, provenance, scenario inputs and a SHA-256 integrity checksum; the checksum is not an authenticity signature. The hosted results are scenario-conditioned demonstrations, not independent classifier validation.
+
+Mission recording and replay support post-run inspection. A separate offline CSV evaluation tool accepts canonical recordings, identifies the input by a file hash and computes labeled fault/RUL metrics only when reference labels are supplied. Historical recordings are evaluated offline rather than being disguised as fresh live telemetry.
+
+Data freshness and quality participate in a decision gate. When the live state becomes stale or insufficiently trustworthy, the system enters DATA HOLD. This makes missing evidence visible to the operator. Authentication, an independent ingestion key and deployment checks support the prototype's trust boundary.
+
+6. WHAT MAKES THE APPROACH DISTINCTIVE
+
+The contribution is the integration of three engineering questions: Is the observation trustworthy? What subsystem evidence explains the condition? How does that condition affect this proposed operating profile?
+
+TwinGuard makes this connection reviewable through an evidence trail and an interactive healthy-versus-degraded mission comparison. It treats uncertainty, data quality and active model provenance as part of the interface. It is designed so authorized engine-specific maps and datasets can replace generic assumptions without replacing the complete operator workflow.
+
+7. IMPLEMENTATION AND DEPLOYMENT
+
+The stack uses React and TypeScript for the operator interface, Three.js-based engine visualization, Python/FastAPI for services, WebSockets for state delivery and SQLite for local persistence. Container packaging and a PostgreSQL deployment path support a staged move to a controlled server or ground-station environment. The current live runtime is scoped to a single configured engine and process; fleet orchestration is future work.
+
+CAN integration requires the actual authorized ECU/DBC specification. The current adapter is not evidence of compatibility with an unspecified engine. The hosted demonstration is a presentation surface; it does not imply that a defence deployment would send operational telemetry to a public hosting service.
+
+8. VALIDATION AND NEXT DEVELOPMENT STAGE
+
+The repository includes automated checks for the twin pipeline, mission directionality, uncertainty labeling, sensor-versus-physical-fault behavior, live-data validity, authentication, replay and operations. System-verification and fault-matrix scripts support repeatable demonstration runs. Release reports should name the tested revision, environment, commands and outcomes; test counts and accuracy values are not claimed here without a fresh recorded run.
+
+Current evidence establishes a software and synthetic scenario-consistency demonstrator. The simulator and healthy reference share assumptions, so strong synthetic results alone would not demonstrate generalization to a real aero engine. No real-flight accuracy, certified RUL, calibrated mission-success probability or reduction in operational failures is claimed.
+
+The next stage is an authorized read-only test-rig integration: confirm signal units and sampling, collect independent healthy/transient/fault recordings, calibrate the reference model, and compare residual-based diagnostics against a threshold-only baseline on held-out operating conditions. Subsequent evaluation should report false alarms per operating hour, fault-specific precision/recall, detection lead time, uncertainty coverage, RUL error only where ground truth exists, and end-to-end latency/resource use on the selected hardware. Hardware-in-the-loop testing, cybersecurity review and domain-led safety assurance follow before any operational evaluation.
+
+9. EXPECTED VALUE
+
+TwinGuard provides operators and propulsion engineers with a coherent way to inspect degradation, examine the evidence behind a diagnosis, compare operating profiles and preserve a run for review. The intended longer-term benefits are earlier maintenance review, better use of engine history and more informed mission planning. These benefits are hypotheses to measure during partner validation, not quantified field outcomes from the present prototype.
+
+The immediate deliverable is a reproducible demonstrator with source code, simulation, documented architecture, an explorable interface, evaluation utilities and a concrete path from synthetic evidence to calibrated engine-specific validation.

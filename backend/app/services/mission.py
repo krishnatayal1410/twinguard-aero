@@ -259,9 +259,11 @@ class MissionEngine:
             100,
         )
 
-        alt2 = max(2500.0, alt - 800)
-        dur2 = max(0.5, dur * 0.82)
-        thr2 = max(52.0, thr - 10)
+        # Respect the request's full valid range. The old preferred cruise
+        # floors increased altitude, duration and throttle for light profiles.
+        alt2 = max(0.0, alt - 800)
+        dur2 = max(0.25, dur * 0.82)
+        thr2 = max(10.0, thr - 10)
         alternative = self._components(state, dur2, alt2, temp, thr2, mission_type)
         alternative_max = max(
             alternative["stress"],

@@ -2,19 +2,36 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
+from threading import RLock
 
 from sqlalchemy import select
 
 from ..db import MissionRun, MissionSample, SessionLocal
 
 
+class RecordingInProgressError(ValueError):
+    pass
+
+
+def _utc_iso(timestamp):
+    # SQLite strips timezone metadata; stored timestamps are canonical UTC.
+    if timestamp.tzinfo is None:
+        timestamp = timestamp.replace(tzinfo=UTC)
+    return timestamp.astimezone(UTC).isoformat()
+
+
 class ReplayService:
     def __init__(self, engine_id="ENGINE-01"):
         self.engine_id = engine_id
         self.active_id = None
+        self.lock = RLock()
 
     def start(self, label=None):
-        with SessionLocal() as s:
+        with self.lock, SessionLocal() as s:
+            if self.active_id is not None:
+                raise RecordingInProgressError(
+                    "A mission recording is already active. End it before starting another."
+                )
             run = MissionRun(
                 engine_id=self.engine_id,
                 label=label or f"TwinGuard Mission {datetime.now(UTC).strftime('%Y-%m-%d %H:%M:%S UTC')}",
@@ -26,13 +43,19 @@ class ReplayService:
             return self.serialize(run)
 
     def sample(self, state):
-        if not self.active_id:
-            return
-        t = state["telemetry"]
-        with SessionLocal() as s:
+        with self.lock, SessionLocal() as s:
+            if not self.active_id:
+                return
+            t = state["telemetry"]
+            timestamp = t["timestamp"]
+            if isinstance(timestamp, str):
+                timestamp = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+            if timestamp.tzinfo is None:
+                timestamp = timestamp.replace(tzinfo=UTC)
             s.add(
                 MissionSample(
                     mission_id=self.active_id,
+                    timestamp=timestamp.astimezone(UTC),
                     health=state["health"]["overall"],
                     rul=state["ai"]["rul_hours"],
                     cht=t["cht"],
@@ -46,10 +69,10 @@ class ReplayService:
             s.commit()
 
     def end(self):
-        if not self.active_id:
-            return None
-        mid = self.active_id
-        with SessionLocal() as s:
+        with self.lock, SessionLocal() as s:
+            if not self.active_id:
+                return None
+            mid = self.active_id
             run = s.get(MissionRun, mid)
             samples = list(
                 s.scalars(
@@ -64,8 +87,8 @@ class ReplayService:
             run.summary_json = json.dumps(summary)
             s.commit()
             s.refresh(run)
-        self.active_id = None
-        return self.serialize(run)
+            self.active_id = None
+            return self.serialize(run)
 
     def list(self, limit=30):
         with SessionLocal() as s:
@@ -103,7 +126,7 @@ class ReplayService:
             if x.anomaly and not prev_anom:
                 events.append(
                     {
-                        "timestamp": x.timestamp.isoformat(),
+                        "timestamp": _utc_iso(x.timestamp),
                         "type": "ANOMALY_DETECTED",
                         "severity": "warning",
                         "message": "The anomaly detector moved into an abnormal state.",
@@ -112,7 +135,7 @@ class ReplayService:
             if x.fault != "normal" and x.fault != prev_fault:
                 events.append(
                     {
-                        "timestamp": x.timestamp.isoformat(),
+                        "timestamp": _utc_iso(x.timestamp),
                         "type": "FAULT_IDENTIFIED",
                         "severity": "warning",
                         "message": f"Probable fault changed to {x.fault}.",
@@ -121,7 +144,7 @@ class ReplayService:
             if x.health < prev_health - 4:
                 events.append(
                     {
-                        "timestamp": x.timestamp.isoformat(),
+                        "timestamp": _utc_iso(x.timestamp),
                         "type": "HEALTH_DEGRADATION",
                         "severity": "warning",
                         "message": f"Health dropped to {x.health:.1f}/100.",
@@ -130,7 +153,7 @@ class ReplayService:
             if x.maintenance != prev_maint:
                 events.append(
                     {
-                        "timestamp": x.timestamp.isoformat(),
+                        "timestamp": _utc_iso(x.timestamp),
                         "type": "MAINTENANCE_CHANGE",
                         "severity": "critical" if x.maintenance in {"NO_GO", "HIGH"} else "warning",
                         "message": f"Maintenance priority changed to {x.maintenance}.",
@@ -162,7 +185,7 @@ class ReplayService:
     @staticmethod
     def serialize_sample(x):
         return {
-            "timestamp": x.timestamp.isoformat(),
+            "timestamp": _utc_iso(x.timestamp),
             "health": float(x.health),
             "rul": float(x.rul),
             "cht": float(x.cht),
@@ -180,7 +203,7 @@ class ReplayService:
             "engine_id": r.engine_id,
             "label": r.label,
             "status": r.status,
-            "started_at": r.started_at.isoformat() if r.started_at else None,
-            "ended_at": r.ended_at.isoformat() if r.ended_at else None,
+            "started_at": _utc_iso(r.started_at) if r.started_at else None,
+            "ended_at": _utc_iso(r.ended_at) if r.ended_at else None,
             "summary": json.loads(r.summary_json) if r.summary_json else None,
         }

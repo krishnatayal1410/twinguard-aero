@@ -18,6 +18,7 @@ export type ViewName =
   | "mission"
   | "replay"
   | "maintenance"
+  | "evaluation"
   | "settings";
 export type MissionType = "endurance" | "high_altitude" | "hot_weather" | "rapid_throttle" | "patrol";
 
@@ -125,6 +126,7 @@ export interface TwinState {
     probable_fault: string;
     fault_confidence: number;
     fault_probabilities: Record<string, number>;
+    fault_probability_basis?: string;
     rul_hours: number;
     rul_interval_hours?: RulInterval;
     rul_uncertainty_hours?: number;

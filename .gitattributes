@@ -1,0 +1,5 @@
+# Treat packaged engineering and presentation assets as binary.
+*.pdf binary
+*.pptx binary
+*.glb binary
+*.joblib binary

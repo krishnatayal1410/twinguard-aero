@@ -1,3 +1,5 @@
+import { isDemo } from "../services/runtimeConfig";
+import { validateMission } from "../utils/missionValidation";
 import type {
   FaultName,
   MissionResult,
@@ -12,6 +14,50 @@ import type {
 let scenario: FaultName = "lubrication";
 let severity = 0.58;
 let tick = 16;
+const FAULT_KEY = "twinguard-demo-scenario-v1";
+const REPLAY_KEY = "twinguard-demo-replays-v1";
+const faults: FaultName[] = [
+  "normal",
+  "lubrication",
+  "overheating",
+  "cooling_degradation",
+  "vibration",
+  "sensor_drift",
+  "injector",
+  "misfire",
+  "combustion_instability",
+  "alternator_degradation",
+];
+let startedAt = Date.now() - 16 * 900;
+function saveScenario() {
+  try {
+    localStorage.setItem(FAULT_KEY, JSON.stringify({ scenario, severity, startedAt }));
+  } catch {
+    /* simulation remains usable without storage */
+  }
+}
+function readScenario(initializeStorage = true) {
+  try {
+    const raw = localStorage.getItem(FAULT_KEY);
+    if (!raw) {
+      if (initializeStorage) saveScenario();
+      return;
+    }
+    const saved = JSON.parse(raw);
+    if (
+      faults.includes(saved.scenario) &&
+      Number.isFinite(saved.severity) &&
+      Number.isFinite(saved.startedAt) &&
+      Number.isFinite(new Date(saved.startedAt).getTime())
+    ) {
+      scenario = saved.scenario;
+      severity = Math.max(0, Math.min(1, saved.severity));
+      startedAt = saved.startedAt;
+    }
+  } catch {
+    /* ignore malformed preferences */
+  }
+}
 let latest: TwinState | undefined;
 let recording = false;
 let activeReplayId: number | undefined;
@@ -19,21 +65,32 @@ let replaySeq = 2;
 const missions: ReplayMission[] = [];
 const replaySamples = new Map<number, ReplaySample[]>();
 
-export const isHostedDemo = () =>
-  typeof window !== "undefined" &&
-  (import.meta.env.VITE_TWINGUARD_DEMO_MODE === "1" || window.location.hostname.endsWith(".vercel.app"));
+export const isHostedDemo = isDemo;
 const clamp = (v: number, a = 0, b = 100) => Math.max(a, Math.min(b, v));
 const human = (s: string) => s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 
+export function getDemoScenario() {
+  readScenario(false);
+  return { fault: scenario, severity, started_at: new Date(startedAt).toISOString() };
+}
+
 export function setDemoFault(fault: FaultName, target: number) {
+  if (!faults.includes(fault) || !Number.isFinite(target) || target < 0 || target > 1)
+    throw new Error("Choose a supported fault and an intensity between 0 and 1.");
   scenario = fault;
-  severity = Math.max(0, Math.min(1, target));
+  severity = target;
   tick = 0;
+  startedAt = Date.now();
+  latest = undefined;
+  saveScenario();
 }
 export function resetDemoFault() {
   scenario = "normal";
   severity = 0;
   tick = 0;
+  startedAt = Date.now();
+  latest = undefined;
+  saveScenario();
 }
 export function rememberDemoTwin(t: TwinState) {
   latest = t;
@@ -144,7 +201,8 @@ function toReplaySample(t: TwinState): ReplaySample {
 }
 
 export function buildDemoTwin(): TwinState {
-  tick += 1;
+  readScenario();
+  tick = Math.max(0, (Date.now() - startedAt) / 900);
   const phase = tick / 5,
     progress = scenario === "normal" ? 0 : Math.min(1, tick / 34) * severity;
   const wave = Math.sin(phase * 0.75),
@@ -306,10 +364,10 @@ export function buildDemoTwin(): TwinState {
       anomaly_score: anomaly ? Math.min(1, 0.2 + progress * 0.8) : 0.04,
       probable_fault: anomaly ? scenario : "normal",
       fault_confidence: confidencePct / 100,
-      fault_probabilities: {
-        [scenario]: anomaly ? confidencePct / 100 : 0.04,
-        normal: anomaly ? 0.08 : 0.96,
-      },
+      fault_probabilities: anomaly
+        ? { [scenario]: confidencePct / 100, normal: 1 - confidencePct / 100 }
+        : { normal: 1 },
+      fault_probability_basis: "scenario_conditioned_demo_scores_uncalibrated",
       rul_hours: rul,
       rul_interval_hours: {
         lower: rul * 0.78,
@@ -327,7 +385,7 @@ export function buildDemoTwin(): TwinState {
       feature_contract: "aero-piston-v2",
       anomaly_persistence_samples: anomaly ? Math.round(progress * 42) : 0,
       model_warning:
-        "Hosted demo uses deterministic synthetic telemetry. Real-engine calibration is not claimed.",
+        "Hosted demo uses deterministic synthetic telemetry and scenario-conditioned scores, not model inference. Real-engine calibration is not claimed.",
     },
     confidence: {
       ai: confidencePct,
@@ -354,8 +412,8 @@ export function buildDemoTwin(): TwinState {
       validation_scope: "SYNTHETIC_PROOF_OF_CONCEPT",
     },
     readiness: {
-      status: anomaly && progress > 0.72 ? "CAUTION" : "READY",
-      label: anomaly && progress > 0.72 ? "REVIEW" : "READY",
+      status: anomaly ? "CAUTION" : "READY",
+      label: anomaly ? "REVIEW" : "READY",
       reason: anomaly
         ? "Twin synchronized; degradation evidence requires mission-level review."
         : "Twin synchronized with nominal residual behavior.",
@@ -378,6 +436,8 @@ export function buildDemoTwin(): TwinState {
 }
 
 export function demoAnalyzeMission(payload: Record<string, unknown>): MissionResult {
+  const error = validateMission(payload);
+  if (error) throw new Error(error);
   const twin = latest ?? buildDemoTwin(),
     type = (payload.mission_type ?? "endurance") as MissionType,
     duration = Math.max(0.25, Number(payload.duration_hours ?? 8)),
@@ -394,30 +454,42 @@ export function demoAnalyzeMission(payload: Record<string, unknown>): MissionRes
     rapid_throttle: 18,
     patrol: 8,
   };
-  const stress = clamp(
-    typeStress[type] +
-      duration * 2.2 +
-      Math.max(0, altitude - 3500) / 450 +
-      Math.max(0, temp - 30) * 0.7 +
-      Math.max(0, throttle - 60) * 0.55 +
-      (100 - health) * 0.8,
-    0,
-    100,
-  );
-  const feasibility = clamp(100 - stress * 0.68 - (100 - health) * 0.32, 4, 98),
-    risk = stress < 34 ? "LOW" : stress < 62 ? "MEDIUM" : "HIGH";
-  const postHealth = clamp(health - duration * (stress / 100) * 1.6),
-    postRul = Math.max(0, rul - duration * (0.7 + stress / 75));
-  const reserve = Math.max(0, lower * 0.14),
-    margin = lower - duration - reserve,
-    horizon = Math.max(0, lower - reserve - duration * 0.55);
-  const alt = {
-    cruise_altitude_m: Math.max(2500, Math.round((altitude - 900) / 100) * 100),
-    duration_hours: Math.max(0.5, Number((duration * 0.88).toFixed(2))),
-    average_throttle_pct: Math.max(50, Math.round(throttle - 12)),
+  // Project both profiles through one model. The preview must match applying
+  // that alternative to the same twin snapshot, including its reserve gate.
+  const project = (hours: number, metres: number, load: number) => {
+    const stress = clamp(
+      typeStress[type] +
+        hours * 2.2 +
+        Math.max(0, metres - 3500) / 450 +
+        Math.max(0, temp - 30) * 0.7 +
+        Math.max(0, load - 60) * 0.55 +
+        (100 - health) * 0.8,
+    );
+    const reserve = Math.max(0, lower * 0.14);
+    const margin = lower - hours - reserve;
+    const risk = margin <= 0 || stress >= 62 ? "HIGH" : stress < 34 ? "LOW" : "MEDIUM";
+    return {
+      stress,
+      risk,
+      reserve,
+      margin,
+      horizon: Math.max(0, margin),
+      postHealth: clamp(health - hours * (stress / 100) * 1.6),
+      postRul: Math.max(0, rul - hours * (0.7 + stress / 75)),
+    } as const;
   };
-  const altStress = clamp(stress - 18, 0, 100),
-    altRisk = altStress < 34 ? "LOW" : altStress < 62 ? "MEDIUM" : "HIGH";
+  const { stress, risk, reserve, margin, horizon, postHealth, postRul } = project(
+    duration,
+    altitude,
+    throttle,
+  );
+  const feasibility = clamp(100 - stress * 0.68 - (100 - health) * 0.32, 4, 98);
+  const alt = {
+    cruise_altitude_m: Math.max(0, altitude - 800),
+    duration_hours: Math.max(0.25, Number((duration * 0.82).toFixed(2))),
+    average_throttle_pct: Math.max(10, throttle - 10),
+  };
+  const alternative = project(alt.duration_hours, alt.cruise_altitude_m, alt.average_throttle_pct);
   return {
     mission_type: type,
     profile_modifier_description: `${human(type)} duty-cycle modifier`,
@@ -462,12 +534,12 @@ export function demoAnalyzeMission(payload: Record<string, unknown>): MissionRes
       horizon < 1 ? "IMMEDIATE_REVIEW" : horizon < 3 ? "REVIEW_SOON" : "MARGIN_AVAILABLE",
     lower_stress_alternative: {
       ...alt,
-      projected_stress_index: altStress / 100,
-      projected_risk: altRisk,
-      projected_profile_endurance_hours: Math.max(0, lower - reserve),
-      mission_margin_hours: margin + duration * 0.24,
-      decision_horizon_hours: horizon + duration * 0.22,
-      engineering_reserve_hours: reserve,
+      projected_stress_index: alternative.stress / 100,
+      projected_risk: alternative.risk,
+      projected_profile_endurance_hours: Math.max(0, lower - alternative.reserve),
+      mission_margin_hours: alternative.margin,
+      decision_horizon_hours: alternative.horizon,
+      engineering_reserve_hours: alternative.reserve,
     },
     explanation: `Current ${human(type)} profile is evaluated against the synchronized synthetic Twin state. The alternative reduces throttle, altitude and exposure to demonstrate counterfactual decision support.`,
     mission_feasibility_index: feasibility,
@@ -497,7 +569,24 @@ function summarize(samples: ReplaySample[]) {
     max_vibration: Math.max(...samples.map((x) => x.vibration)),
     anomaly_samples: samples.filter((x) => x.anomaly).length,
     faults_observed: [...new Set(samples.filter((x) => x.fault !== "normal").map((x) => x.fault))],
-    events: latest?.events ?? [],
+    events: samples.flatMap((sample, index) => {
+      const prior = samples[index - 1];
+      if (
+        prior &&
+        prior.anomaly === sample.anomaly &&
+        prior.fault === sample.fault &&
+        prior.maintenance === sample.maintenance
+      )
+        return [];
+      return [
+        {
+          timestamp: sample.timestamp,
+          type: index === 0 ? "RECORDING_BASELINE" : "STATE_TRANSITION",
+          severity: sample.anomaly ? "warning" : "info",
+          message: `Recorded ${sample.fault} condition · health ${sample.health.toFixed(1)} · maintenance ${sample.maintenance}.`,
+        },
+      ];
+    }),
   };
 }
 
@@ -525,9 +614,49 @@ function seedReplaySamples(id: number) {
   replaySamples.set(id, samples);
 }
 
+let restoredReplays = false;
+function restoreReplays() {
+  if (restoredReplays) return;
+  restoredReplays = true;
+  try {
+    const rows = JSON.parse(localStorage.getItem(REPLAY_KEY) || "[]");
+    if (!Array.isArray(rows)) return;
+    for (const row of rows.slice(0, 12)) {
+      if (
+        !Number.isSafeInteger(row.mission?.id) ||
+        row.mission.status !== "COMPLETED" ||
+        !Array.isArray(row.samples)
+      )
+        continue;
+      if (
+        !row.samples.every(
+          (x: ReplaySample) =>
+            Number.isFinite(Date.parse(x.timestamp)) && Number.isFinite(x.health) && Number.isFinite(x.rul),
+        )
+      )
+        continue;
+      missions.push(row.mission);
+      replaySamples.set(row.mission.id, row.samples.slice(-5000));
+      replaySeq = Math.max(replaySeq, row.mission.id + 1);
+    }
+  } catch {
+    /* a malformed saved recording must not prevent startup */
+  }
+}
+function persistReplays() {
+  const completed = missions.filter((m) => m.status === "COMPLETED").slice(0, 12);
+  localStorage.setItem(
+    REPLAY_KEY,
+    JSON.stringify(completed.map((mission) => ({ mission, samples: replaySamples.get(mission.id) ?? [] }))),
+  );
+}
+
 export async function demoStartReplay(label?: string) {
+  restoreReplays();
+  const active = missions.find((m) => m.id === activeReplayId);
+  if (recording && active) return active;
   recording = true;
-  const id = replaySeq++,
+  const id = Math.max(Date.now(), replaySeq++),
     m: ReplayMission = {
       id,
       engine_id: "ENGINE-01",
@@ -541,10 +670,8 @@ export async function demoStartReplay(label?: string) {
   return m;
 }
 export async function demoEndReplay() {
-  const m =
-    missions.find((x) => x.id === activeReplayId) ??
-    missions[0] ??
-    (await demoStartReplay("Hosted Demo Mission"));
+  const m = missions.find((x) => x.id === activeReplayId);
+  if (!m || !recording) throw new Error("No active recording to stop.");
   recording = false;
   activeReplayId = undefined;
   const samples = replaySamples.get(m.id) ?? [];
@@ -556,9 +683,17 @@ export async function demoEndReplay() {
   };
   const index = missions.findIndex((x) => x.id === m.id);
   if (index >= 0) missions[index] = done;
+  try {
+    persistReplays();
+  } catch {
+    throw new Error(
+      "Recording completed in this tab, but browser storage is full. Export or free storage before refreshing.",
+    );
+  }
   return done;
 }
 export async function demoListReplay() {
+  restoreReplays();
   if (!missions.length) {
     const id = 1;
     seedReplaySamples(id);
@@ -577,21 +712,22 @@ export async function demoListReplay() {
 }
 export async function demoGetReplay(id: number) {
   const all = await demoListReplay();
-  return all.find((x) => x.id === id) ?? all[0];
+  const mission = all.find((x) => x.id === id);
+  if (!mission) throw new Error("Recording not found.");
+  return mission;
 }
 export async function demoGetReplaySamples(id: number) {
-  await demoListReplay();
-  seedReplaySamples(id);
+  await demoGetReplay(id);
   return [...(replaySamples.get(id) ?? [])];
 }
 
 export function demoSystemStatus(): SystemStatus {
   return {
     service: "TwinGuard Aero Hosted Demo",
-    version: "3.2.0",
+    version: "3.3.0",
     environment: "vercel-demo",
     engine_id: "ENGINE-01",
-    database: "Hosted demo memory",
+    database: "Browser-local recordings (12 most recent)",
     models: { anomaly: false, fault: false, rul: false },
     integrations: { mqtt: false, unreal_udp: false, can: false },
     telemetry: {

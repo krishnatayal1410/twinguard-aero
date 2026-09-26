@@ -1,3 +1,4 @@
+import { motion, useReducedMotion } from "framer-motion";
 import type { ReactNode } from "react";
 import { Plane, Activity } from "lucide-react";
 import { fmt } from "./ui";
@@ -20,7 +21,18 @@ export function PageHeader({ title, subtitle }: { title: string; subtitle: strin
   );
 }
 export function Panel({ children, className = "" }: { children: ReactNode; className?: string }) {
-  return <section className={`ref-panel ${className}`}>{children}</section>;
+  const reduced = useReducedMotion();
+  return (
+    <motion.section
+      className={`ref-panel ${className}`}
+      initial={false}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, amount: 0.04 }}
+      transition={{ duration: reduced ? 0 : 0.35, ease: [0.22, 1, 0.36, 1] }}
+    >
+      {children}
+    </motion.section>
+  );
 }
 export function PanelTitle({
   icon,

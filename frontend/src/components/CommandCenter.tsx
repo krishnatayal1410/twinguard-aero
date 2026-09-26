@@ -12,11 +12,13 @@ import {
   TrendingDown,
   Zap,
 } from "lucide-react";
+import { isHostedDemo } from "../demo/demoRuntime";
 import { useTwinStore } from "../store/twinStore";
 import EngineTwin from "./EngineTwin";
 import { fmt, pretty } from "./ui";
 import { MiniLineChart, PageHeader, Panel, PanelTitle, StatusPill } from "./ReferenceUI";
 export default function CommandCenter() {
+  const demo = isHostedDemo();
   const twin = useTwinStore((s) => s.twin),
     runtime = useTwinStore((s) => s.runtimeValidity),
     runs = useTwinStore((s) => s.missionRuns),
@@ -28,7 +30,7 @@ export default function CommandCenter() {
     ai = twin.ai,
     r = twin.residuals,
     last = runs.length ? runs[runs.length - 1].result : undefined,
-    eligible = runtime?.decision_eligible !== false,
+    eligible = useTwinStore.getState().online && runtime?.decision_eligible === true,
     fault = ai.anomaly ? pretty(ai.probable_fault) : "No active anomaly",
     faultTone = ai.anomaly ? "orange" : "green";
   const metrics = [
@@ -50,15 +52,27 @@ export default function CommandCenter() {
     },
     {
       label: "Mission readiness",
-      value: last?.decision || twin.readiness.label,
+      value: !eligible ? "DATA HOLD" : last?.decision || twin.readiness.label,
       meta: last ? fmt(last.mission_feasibility_index, 0) + "% feasibility" : twin.readiness.reason,
       icon: <CheckCircle2 />,
-      tone: eligible ? "green" : "orange",
+      tone: !eligible
+        ? "orange"
+        : last
+          ? last.overall_risk === "LOW"
+            ? "green"
+            : last.overall_risk === "MEDIUM"
+              ? "orange"
+              : "red"
+          : twin.readiness.status === "READY"
+            ? "green"
+            : "orange",
     },
     {
       label: "Active diagnosis",
       value: fault,
-      meta: ai.anomaly ? fmt(ai.fault_confidence * 100, 0) + "% confidence" : "All monitored systems nominal",
+      meta: ai.anomaly
+        ? fmt(ai.fault_confidence * 100, 0) + (demo ? "% scenario score" : "% diagnostic score")
+        : "All monitored systems nominal",
       icon: <Zap />,
       tone: faultTone,
     },
@@ -95,12 +109,12 @@ export default function CommandCenter() {
             subtitle="Drag to rotate · Scroll to zoom · Use X-ray to locate faults"
             right={
               <StatusPill tone={eligible ? "green" : "orange"}>
-                <Radio /> {eligible ? "LIVE" : "DATA HOLD"}
+                <Radio /> {eligible ? (demo ? "SIMULATED" : "LIVE") : "DATA HOLD"}
               </StatusPill>
             }
           />
           <div className="cc-engine-stage-v4">
-            <EngineTwin compact autoRotate />
+            <EngineTwin compact />
           </div>
         </Panel>
         <Panel className="cc-intelligence">
@@ -114,7 +128,10 @@ export default function CommandCenter() {
             <div>
               <span>DETECTED CONDITION</span>
               <b>{fault}</b>
-              <small>{fmt(ai.fault_confidence * 100, 0)}% diagnostic confidence</small>
+              <small>
+                {fmt(ai.fault_confidence * 100, 0)}%{" "}
+                {demo ? "scenario score" : "uncalibrated diagnostic score"}
+              </small>
             </div>
           </div>
           <div className="ai-readings">
@@ -165,7 +182,7 @@ export default function CommandCenter() {
             series={[
               { name: "CHT °C", values: history.cht || [], color: "#1677ff" },
               {
-                name: "Oil pressure ×100",
+                name: "Oil pressure (kPa)",
                 values: (history.oil_pressure || []).map((v) => v * 100),
                 color: "#20a47b",
               },
@@ -175,7 +192,7 @@ export default function CommandCenter() {
                 color: "#f59e0b",
               },
             ]}
-            labels={["-90s", "-75s", "-60s", "-45s", "-30s", "-15s", "now"]}
+            labels={["Earlier samples", "Latest sample"]}
           />
           <div className="telemetry-strip">
             <div>

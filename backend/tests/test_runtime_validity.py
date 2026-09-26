@@ -38,3 +38,19 @@ def test_runtime_snapshot_does_not_mutate_saved_twin_state():
     saved = deepcopy(original)
     _runtime_snapshot(original)
     assert original == saved
+
+
+def test_poor_sensor_integrity_blocks_mission_even_with_high_aggregate_quality():
+    current = state()
+    current["health"] = {"sensor": 50.0}
+    snapshot = _runtime_snapshot(current)
+    assert snapshot["runtime_validity"]["sensor_integrity_ok"] is False
+    assert snapshot["runtime_validity"]["decision_eligible"] is False
+    assert snapshot["readiness"]["status"] == "DATA_HOLD"
+
+
+def test_poor_quality_label_cannot_disagree_with_decision_gate():
+    current = state()
+    current["data_quality"]["label"] = "POOR"
+    snapshot = _runtime_snapshot(current)
+    assert snapshot["runtime_validity"]["decision_eligible"] is False

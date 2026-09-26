@@ -17,6 +17,11 @@ def start_mqtt(on_telemetry):
         log.error("MQTT is enabled, but paho-mqtt is not installed")
         return None
     client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+    if settings.mqtt_username:
+        client.username_pw_set(settings.mqtt_username, settings.mqtt_password)
+    if settings.mqtt_tls:
+        client.tls_set(ca_certs=settings.mqtt_ca_file)
+    client.reconnect_delay_set(min_delay=1, max_delay=30)
 
     def connect(client, _userdata, _flags, reason_code, _properties=None):
         if reason_code == 0:
@@ -27,7 +32,12 @@ def start_mqtt(on_telemetry):
 
     def message(_client, _userdata, msg):
         try:
-            on_telemetry(json.loads(msg.payload.decode()))
+            if len(msg.payload) > settings.max_body_bytes:
+                raise ValueError("MQTT payload too large")
+            data = json.loads(msg.payload.decode())
+            if not isinstance(data, dict) or data.get("engine_id") != settings.engine_id:
+                raise ValueError("Unauthorized engine")
+            on_telemetry(data)
         except (UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError) as exc:
             log.warning("Rejected invalid MQTT telemetry: %s", exc)
 

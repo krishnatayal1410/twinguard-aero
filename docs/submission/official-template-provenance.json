@@ -1,0 +1,20 @@
+{
+  "verified_on": "2026-09-26",
+  "official_url": "https://sih.gov.in/letters/2026/SIH2026-IDEA-Presentation-Format.pptx",
+  "http_status": 200,
+  "official_bytes": 924505,
+  "official_sha256": "ce3e5deebec2741f3383cb2dd21269cad8d9930f7c747c9903d7d4b27db14de6",
+  "desktop_copy_byte_identical": true,
+  "output_slides": 6,
+  "instruction_slide_removed": true,
+  "fixed_section_pointers_preserved": true,
+  "master_layout_theme_media_parts_byte_preserved": 28,
+  "validation": "All validations PASSED using official-template baseline",
+  "visual_review": "All six slides rendered and inspected; first-render layout issues corrected and affected slides re-rendered",
+  "team_name": "MINDMESH",
+  "team_name_source": "Existing TwinGuard AI SIH26054 MindMesh Improved Content.pdf title page",
+  "unverified_required_field": "Team ID",
+  "submission_ready": false,
+  "reason": "Team ID must be confirmed from portal and inserted before final PDF upload.",
+  "output_pdf_bytes": 463472
+}

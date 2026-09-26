@@ -1,0 +1,47 @@
+{
+  "prepared_date": "2026-09-26",
+  "problem_statement": "SIH26054",
+  "constraints_source": "User-supplied screenshot; PS54 form limits must be confirmed in live portal",
+  "fields": [
+    {
+      "file": "idea-title.txt",
+      "characters_excluding_final_newline": 94,
+      "utf16_code_units": 94,
+      "limit_from_user_screenshot": 100,
+      "within_limit": true
+    },
+    {
+      "file": "idea-description.txt",
+      "characters_excluding_final_newline": 9517,
+      "utf16_code_units": 9517,
+      "limit_from_user_screenshot": 50000,
+      "within_limit": true
+    },
+    {
+      "file": "abstract.txt",
+      "characters_excluding_final_newline": 2684,
+      "utf16_code_units": 2684,
+      "limit_from_user_screenshot": 10000,
+      "within_limit": true
+    }
+  ],
+  "supporting_pdf": {
+    "file": "TwinGuard-Aero-Evaluator-Brief.pdf",
+    "pages": 6,
+    "bytes": 13442,
+    "below_10_mb": true,
+    "official_template": false,
+    "visual_inspection": "All six pages rendered and visually inspected; no clipping or overlap observed"
+  },
+  "test_performance_claims": "No fresh software pass counts or predictive performance metrics asserted in these materials.",
+  "official_template_draft": {
+    "pptx": "TwinGuard-Aero-SIH2026-Template-Draft.pptx",
+    "pdf": "TwinGuard-Aero-SIH2026-Template-Draft.pdf",
+    "pages": 6,
+    "pdf_bytes": 463472,
+    "below_10_mb": true,
+    "official_template_byte_verified": true,
+    "remaining_required_field": "Team ID",
+    "ready_for_final_upload": false
+  }
+}

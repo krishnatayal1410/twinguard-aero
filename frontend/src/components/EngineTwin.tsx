@@ -1,4 +1,5 @@
-import { Canvas, useFrame } from "@react-three/fiber";
+import { useReducedMotion } from "framer-motion";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Html, OrbitControls, useGLTF } from "@react-three/drei";
 import {
   Box,
@@ -15,7 +16,7 @@ import {
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { memo, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import type { Object3D } from "three";
 import { useTwinStore } from "../store/twinStore";
@@ -107,6 +108,8 @@ function EngineAsset({
 }) {
   const gltf = useGLTF("/assets/engine/twinguard-rotax-915-production.glb");
   const root = useMemo(() => gltf.scene.clone(true), [gltf.scene]);
+  const invalidate = useThree((state) => state.invalidate);
+  const targetPosition = useMemo(() => new THREE.Vector3(), []);
   const modules = useRef<Array<{ name: ModuleName; object: Object3D; base: THREE.Vector3 }>>([]);
   useEffect(() => {
     modules.current = [];
@@ -161,16 +164,20 @@ function EngineAsset({
       }
     });
   }, [root, mode, opacity, focus, wireframe]);
+  useEffect(() => invalidate(), [invalidate, mode, explodeAmount]);
   useFrame((_, delta) => {
+    let moving = false;
     const smoothing = 1 - Math.exp(-delta * 5.5);
     for (const item of modules.current) {
       const offset: [number, number, number] = mode === "exploded" ? OFFSETS[item.name] : [0, 0, 0];
       const scale = explodeAmount / 100;
-      const target = item.base
-        .clone()
-        .add(new THREE.Vector3(offset[0] * scale, offset[1] * scale, offset[2] * scale));
-      item.object.position.lerp(target, smoothing);
+      targetPosition.set(offset[0] * scale, offset[1] * scale, offset[2] * scale).add(item.base);
+      if (item.object.position.distanceToSquared(targetPosition) > 0.000001) {
+        item.object.position.lerp(targetPosition, smoothing);
+        moving = true;
+      } else item.object.position.copy(targetPosition);
     }
+    if (moving) invalidate();
   });
   return (
     <group
@@ -260,6 +267,7 @@ function Scene({
   darkStage,
   onFocus,
   fault,
+  faultActive,
 }: {
   mode: ViewMode;
   opacity: number;
@@ -272,11 +280,18 @@ function Scene({
   darkStage: boolean;
   onFocus: (m: string) => void;
   fault: ModuleName;
+  faultActive: boolean;
 }) {
   const controls = useRef<any>();
+  const { camera, size } = useThree();
   useEffect(() => {
-    controls.current?.reset();
-  }, [resetToken]);
+    const aspect = size.width / Math.max(1, size.height);
+    const distance = Math.max(1, 1.25 / aspect) * (mode === "exploded" ? 1.18 : 1);
+    camera.position.set(6.8 * distance, 3.6 * distance, 8.6 * distance);
+    camera.lookAt(0, 0, 0);
+    controls.current?.target.set(0, 0, 0);
+    controls.current?.update();
+  }, [camera, size.width, size.height, resetToken, mode]);
   return (
     <>
       <color attach="background" args={[darkStage ? "#081b2a" : "#f4f8fb"]} />
@@ -295,7 +310,7 @@ function Scene({
           onFocus={onFocus}
         />
         <ModelLabels visible={labels} mode={mode} explodeAmount={explodeAmount} />
-        <FaultMarker module={fault} active={mode === "xray"} />
+        <FaultMarker module={fault} active={mode === "xray" && faultActive} />
       </Suspense>
       <gridHelper
         args={[16, 32, darkStage ? "#1c5576" : "#c7d8e5", darkStage ? "#102f43" : "#e5edf3"]}
@@ -308,13 +323,15 @@ function Scene({
         enableDamping
         dampingFactor={0.07}
         minDistance={4}
-        maxDistance={14}
+        maxDistance={32}
         autoRotate={autoRotate}
         autoRotateSpeed={0.6}
       />
     </>
   );
 }
+
+const MemoScene = memo(Scene);
 
 export default function EngineTwin({
   compact = false,
@@ -325,8 +342,21 @@ export default function EngineTwin({
   resetToken = 0,
   onFocus,
 }: Props) {
+  const reducedMotion = useReducedMotion();
   const twin = useTwinStore((state) => state.twin);
   const host = useRef<HTMLDivElement>(null);
+  const [inViewport, setInViewport] = useState(true);
+  const [pageVisible, setPageVisible] = useState(!document.hidden);
+  useEffect(() => {
+    const updateVisibility = () => setPageVisible(!document.hidden);
+    document.addEventListener("visibilitychange", updateVisibility);
+    const observer = new IntersectionObserver(([entry]) => setInViewport(entry.isIntersecting));
+    if (host.current) observer.observe(host.current);
+    return () => {
+      observer.disconnect();
+      document.removeEventListener("visibilitychange", updateVisibility);
+    };
+  }, []);
   const [mode, setMode] = useState<ViewMode>(xray ? "xray" : explode ? "exploded" : "assembled");
   const [opacity, setOpacity] = useState(100),
     [focus, setFocus] = useState(externalFocus),
@@ -344,6 +374,13 @@ export default function EngineTwin({
     document.addEventListener("fullscreenchange", sync);
     return () => document.removeEventListener("fullscreenchange", sync);
   }, []);
+  const setSelected = useCallback(
+    (module: string) => {
+      setFocus(module);
+      onFocus?.(module);
+    },
+    [onFocus],
+  );
   if (typeof document !== "undefined" && !supportsWebGL())
     return (
       <div className="webgl-fallback">
@@ -352,10 +389,6 @@ export default function EngineTwin({
       </div>
     );
   const fault = faultModule(twin?.ai.probable_fault);
-  const setSelected = (module: string) => {
-    setFocus(module);
-    onFocus?.(module);
-  };
   const locateFault = () => {
     setMode("xray");
     setOpacity(26);
@@ -431,16 +464,17 @@ export default function EngineTwin({
       </div>
       <div className="engine-canvas">
         <Canvas
+          frameloop={autoRotate && !reducedMotion && inViewport && pageVisible ? "always" : "demand"}
           shadows
           dpr={[1, 1.6]}
           camera={{ position: [6.8, 3.6, 8.6], fov: 32, near: 0.1, far: 100 }}
           gl={{ antialias: true, powerPreference: "high-performance" }}
         >
-          <Scene
+          <MemoScene
             mode={mode}
             opacity={opacity / 100}
             focus={focus}
-            autoRotate={autoRotate}
+            autoRotate={autoRotate && !reducedMotion && inViewport && pageVisible}
             resetToken={reset + resetToken}
             explodeAmount={explodeAmount}
             wireframe={wireframe}
@@ -448,6 +482,7 @@ export default function EngineTwin({
             darkStage={darkStage}
             onFocus={setSelected}
             fault={fault}
+            faultActive={!!twin?.ai.anomaly}
           />
         </Canvas>
       </div>

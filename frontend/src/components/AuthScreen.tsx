@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import type { FormEvent } from "react";
 import {
   Activity,
@@ -23,6 +23,7 @@ export default function AuthScreen({
   onClose?: () => void;
 }) {
   const demo = isHostedDemo();
+  const fieldId = useId();
   const setSession = useAuthStore((s) => s.setSession),
     [mode, setMode] = useState<"signin" | "signup">(initialMode),
     [name, setName] = useState(""),
@@ -33,16 +34,25 @@ export default function AuthScreen({
     [error, setError] = useState("");
   const submit = async (e: FormEvent) => {
     e.preventDefault();
+    if (loading) return;
     setError("");
     setLoading(true);
     try {
       const r = mode === "signup" ? await signUp(name, email, password) : await signIn(email, password);
       setSession(r.token, r.user);
       onClose?.();
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const failure = err as { response?: { data?: { detail?: unknown } }; message?: string };
+      const detail = failure?.response?.data?.detail;
+      const validation = Array.isArray(detail)
+        ? detail
+            .map((item) => (typeof item?.msg === "string" ? item.msg : ""))
+            .filter(Boolean)
+            .join(" ")
+        : "";
       setError(
-        err?.response?.data?.detail ||
-          err?.message ||
+        (typeof detail === "string" ? detail : validation) ||
+          failure?.message ||
           "Could not authenticate. Check your details and try again.",
       );
     } finally {
@@ -67,7 +77,7 @@ export default function AuthScreen({
         </div>
         <div className="auth-story-copy">
           <span className="auth-kicker">AI-ENABLED DIGITAL TWIN</span>
-          <h1>Mission intelligence for the engine that cannot fail.</h1>
+          <h1>Understand engine health before the next mission.</h1>
           <p>
             Live engine telemetry, physics residuals, anomaly detection, mission-aware RUL, predictive
             maintenance and 3D system context in one operator platform.
@@ -127,13 +137,14 @@ export default function AuthScreen({
               Create account
             </button>
           </div>
-          <form onSubmit={submit}>
+          <form onSubmit={submit} aria-busy={loading}>
             {mode === "signup" && (
-              <label>
+              <label htmlFor={`${fieldId}-name`}>
                 <span>Full name</span>
                 <div>
                   <UserRound />
                   <input
+                    id={`${fieldId}-name`}
                     required
                     minLength={2}
                     maxLength={120}
@@ -145,13 +156,15 @@ export default function AuthScreen({
                 </div>
               </label>
             )}
-            <label>
+            <label htmlFor={`${fieldId}-email`}>
               <span>Email</span>
               <div>
                 <Mail />
                 <input
+                  id={`${fieldId}-email`}
                   required
                   type="email"
+                  maxLength={255}
                   autoComplete="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
@@ -159,13 +172,16 @@ export default function AuthScreen({
                 />
               </div>
             </label>
-            <label>
+            <label htmlFor={`${fieldId}-password`}>
               <span>Password</span>
               <div>
                 <LockKeyhole />
                 <input
+                  id={`${fieldId}-password`}
                   required
                   minLength={mode === "signup" ? 10 : 1}
+                  maxLength={128}
+                  aria-describedby={mode === "signup" ? `${fieldId}-password-hint` : undefined}
                   type={show ? "text" : "password"}
                   autoComplete={mode === "signup" ? "new-password" : "current-password"}
                   value={password}
@@ -183,11 +199,15 @@ export default function AuthScreen({
               </div>
             </label>
             {mode === "signup" && (
-              <small className="password-hint">
+              <small id={`${fieldId}-password-hint`} className="password-hint">
                 Use 10+ characters with uppercase, lowercase and a number.
               </small>
             )}
-            {error && <div className="auth-error">{error}</div>}
+            {error && (
+              <div className="auth-error" role="alert">
+                {error}
+              </div>
+            )}
             <button className="auth-submit" disabled={loading}>
               {loading ? "Please wait…" : mode === "signin" ? "Sign in" : "Create account"}
               <ArrowRight />

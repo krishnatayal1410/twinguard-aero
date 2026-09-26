@@ -4,11 +4,15 @@ import json
 import os
 import secrets
 import time
+from pathlib import Path
 from urllib.request import Request, urlopen
 
 BASE = os.getenv("TWINGUARD_API", "http://127.0.0.1:8000")
 KEY = os.getenv("TWINGUARD_INGEST_KEY", "")
 TOKEN = ""
+EXPECTED_VERSION = json.loads((Path(__file__).resolve().parents[1] / "frontend/package.json").read_text())[
+    "version"
+]
 
 
 def headers(extra=None):
@@ -109,7 +113,9 @@ check("Diagnostics + event history", diagnostics_check)
 
 def status_check():
     status = get("/api/v1/system/status")
-    assert status["version"] == "3.2.0"
+    assert status["version"] == EXPECTED_VERSION, (
+        f"Runtime version {status['version']} does not match release {EXPECTED_VERSION}"
+    )
     assert status["engine_id"] == "ENGINE-01"
     assert status["security"]["trusted_hosts"]
     assert status["telemetry"]["available"] is True

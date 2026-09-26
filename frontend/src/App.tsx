@@ -1,6 +1,7 @@
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import {
   Bell,
+  ClipboardCheck,
   Box,
   FlaskConical,
   HeartPulse,
@@ -23,6 +24,9 @@ import "./styles/reference.css";
 import "./styles/functional.css";
 import "./styles/interactions.css";
 import "./styles/design-v4.css";
+import "./styles/workspace.css";
+import "./styles/evaluation.css";
+import { navigate, readRoute, pageHref } from "./utils/navigation";
 
 const CommandCenter = lazy(() => import("./components/CommandCenter")),
   DigitalTwinDeck = lazy(() => import("./components/DigitalTwinDeck")),
@@ -31,6 +35,7 @@ const CommandCenter = lazy(() => import("./components/CommandCenter")),
   ReplayDeck = lazy(() => import("./components/ReplayDeck")),
   DiagnosticsDeck = lazy(() => import("./components/DiagnosticsDeck")),
   MaintenanceDeck = lazy(() => import("./components/MaintenanceDeck")),
+  EvaluationDeck = lazy(() => import("./components/EvaluationDeck")),
   SettingsDeck = lazy(() => import("./components/SettingsDeck"));
 const nav: Array<[ViewName, string, any]> = [
   ["command", "Command Center", Home],
@@ -40,11 +45,13 @@ const nav: Array<[ViewName, string, any]> = [
   ["replay", "Replay", History],
   ["diagnostics", "Diagnostics", ScanSearch],
   ["maintenance", "Maintenance", Wrench],
+  ["evaluation", "Evaluation Center", ClipboardCheck],
   ["settings", "Settings", Settings],
 ];
 
 export default function App() {
   const demo = isHostedDemo();
+  const dialogRef = useRef<HTMLDivElement>(null);
   const view = useTwinStore((s) => s.view),
     setView = useTwinStore((s) => s.setView),
     twin = useTwinStore((s) => s.twin),
@@ -58,6 +65,54 @@ export default function App() {
     [clock, setClock] = useState(new Date()),
     [authDialog, setAuthDialog] = useState<"signin" | "signup" | null>(null);
   useEffect(() => {
+    if (!authDialog) return;
+    const opener = document.activeElement as HTMLElement | null;
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    const focusables = () =>
+      Array.from(
+        dialog.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), input:not([disabled]), select:not([disabled]), a[href], [tabindex="0"]',
+        ),
+      ).filter((element) => element.getClientRects().length > 0);
+    (dialog.querySelector<HTMLElement>("input") ?? focusables()[0])?.focus();
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setAuthDialog(null);
+      }
+      if (event.key !== "Tab") return;
+      const items = focusables();
+      const first = items[0],
+        last = items[items.length - 1];
+      if (event.shiftKey && (document.activeElement === first || !dialog.contains(document.activeElement))) {
+        event.preventDefault();
+        last?.focus();
+      } else if (
+        !event.shiftKey &&
+        (document.activeElement === last || !dialog.contains(document.activeElement))
+      ) {
+        event.preventDefault();
+        first?.focus();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      if (opener?.isConnected) opener.focus();
+      else document.getElementById("workspace")?.focus();
+    };
+  }, [authDialog]);
+  useEffect(() => {
+    const sync = () => {
+      useTwinStore.setState({ view: readRoute().view });
+      document.querySelector(".tg-content")?.scrollTo({ top: 0 });
+      window.scrollTo({ top: 0 });
+    };
+    window.addEventListener("hashchange", sync);
+    return () => window.removeEventListener("hashchange", sync);
+  }, []);
+  useEffect(() => {
     getTwin()
       .then(setTwin)
       .catch(() => undefined);
@@ -68,10 +123,9 @@ export default function App() {
     return () => clearInterval(id);
   }, []);
   const openSettings = (tab = "system") => {
-      sessionStorage.setItem("twinguard-settings-tab", tab);
-      setView("settings");
+      navigate("settings", tab);
     },
-    decisionEligible = online && runtime?.decision_eligible !== false,
+    decisionEligible = online && !!twin && runtime?.decision_eligible === true,
     last = runs.length ? runs[runs.length - 1].result : undefined,
     mission = last?.mission_type ? String(last.mission_type).replace(/_/g, " ") : "Awaiting mission",
     engineId = twin?.engine_id ?? "ENGINE-01";
@@ -90,11 +144,23 @@ export default function App() {
       <DiagnosticsDeck />
     ) : view === "maintenance" ? (
       <MaintenanceDeck />
+    ) : view === "evaluation" ? (
+      <EvaluationDeck />
     ) : (
       <SettingsDeck />
     );
   return (
     <div className="tg-shell">
+      <a
+        className="skip-link"
+        href="#workspace"
+        onClick={(event) => {
+          event.preventDefault();
+          document.getElementById("workspace")?.focus();
+        }}
+      >
+        Skip to workspace
+      </a>
       <aside className="tg-sidebar">
         <div className="tg-brand">
           <img src="/assets/twinguard-mark.svg" alt="TwinGuard AI logo" />
@@ -104,11 +170,12 @@ export default function App() {
           </div>
         </div>
         <div className="tg-nav-label">OPERATIONS</div>
-        <nav>
+        <nav aria-label="Operations">
           {nav.slice(0, 5).map(([id, label, Icon]) => (
             <button
               key={id}
               className={view === id ? "active" : ""}
+              aria-current={view === id ? "page" : undefined}
               onClick={() => setView(id)}
               title={label}
             >
@@ -118,11 +185,12 @@ export default function App() {
           ))}
         </nav>
         <div className="tg-nav-label">ENGINEERING</div>
-        <nav>
+        <nav aria-label="Engineering">
           {nav.slice(5).map(([id, label, Icon]) => (
             <button
               key={id}
               className={view === id ? "active" : ""}
+              aria-current={view === id ? "page" : undefined}
               onClick={() => (id === "settings" ? openSettings() : setView(id))}
               title={label}
             >
@@ -133,9 +201,9 @@ export default function App() {
         </nav>
         <div className="tg-sidebar-foot">
           <span className={decisionEligible ? "online" : "hold"}>
-            <i /> {decisionEligible ? "ALL SYSTEMS LIVE" : "DATA HOLD"}
+            <i /> {decisionEligible ? (demo ? "SIMULATION ACTIVE" : "TELEMETRY CONNECTED") : "DATA HOLD"}
           </span>
-          <small>TwinGuard v4.0 · SIH Prototype</small>
+          <small>TwinGuard · SIH26054 Prototype</small>
         </div>
       </aside>
       <main className="tg-main">
@@ -200,14 +268,44 @@ export default function App() {
             </div>
           )}
         </header>
-        <section className="tg-content">
-          <ErrorBoundary name="TwinGuard page">
+        <section className="tg-content" id="workspace" tabIndex={-1}>
+          <div className="workspace-strip">
+            <div>
+              <span className={decisionEligible ? "stream-dot" : "stream-dot hold"} />
+              <strong>
+                {demo
+                  ? "Synthetic engine stream"
+                  : online
+                    ? "Backend telemetry stream"
+                    : "Connecting to telemetry"}
+              </strong>
+              <small>
+                {demo
+                  ? "Interactive prototype · no physical engine connected"
+                  : "Live ingestion · source reported in model details"}
+              </small>
+            </div>
+            <nav aria-label="Engineering shortcuts">
+              <a href={pageHref("digitalTwin")}>3D engine</a>
+              <a href={pageHref("settings", "simulator")}>Simulator</a>
+              <a href={pageHref("digitalTwin", "trends")}>Live readings</a>
+              <a href={pageHref("mission")}>Mission lab</a>
+              <a href={pageHref("evaluation")}>Guided evaluation</a>
+            </nav>
+          </div>
+          <ErrorBoundary key={view} name="TwinGuard page">
             <Suspense fallback={<div className="tg-loading">Loading TwinGuard…</div>}>{screen}</Suspense>
           </ErrorBoundary>
         </section>
       </main>
       {authDialog && (
-        <div className="auth-modal" role="dialog" aria-modal="true" aria-label="TwinGuard account">
+        <div
+          ref={dialogRef}
+          className="auth-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-label="TwinGuard account"
+        >
           <div className="auth-modal-backdrop" onClick={() => setAuthDialog(null)} />
           <AuthScreen initialMode={authDialog} onClose={() => setAuthDialog(null)} />
         </div>

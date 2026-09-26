@@ -11,3 +11,10 @@ data/runtime/*.db
 .vercel
 .env.local
 *.tsbuildinfo
+.env*
+
+# Generated verification artifacts and scratch work
+frontend/test-results/
+frontend/playwright-report/
+work/
+.ruff_cache/

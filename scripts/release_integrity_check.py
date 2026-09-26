@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -96,13 +97,14 @@ for path in SRC.rglob("*.tsx"):
             f"legacy residual access {pattern} in {path.relative_to(ROOT)}",
         )
 
+tracked = set(subprocess.check_output(["git", "ls-files", "-z"], cwd=ROOT).decode().split("\0"))
 for path in [
     ROOT / ".runtime/logs/backend.log",
     ROOT / ".runtime/logs/frontend.log",
     ROOT / ".runtime/logs/simulator.log",
 ]:
     require(
-        not path.exists(),
+        str(path.relative_to(ROOT)) not in tracked,
         f"runtime log is tracked in release tree: {path.relative_to(ROOT)}",
     )
 

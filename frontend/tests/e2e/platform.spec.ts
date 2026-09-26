@@ -6,6 +6,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 test("all primary screens are reachable", async ({ page }) => {
+  test.setTimeout(60000);
   const pages = [
     ["Digital Twin", "Digital Twin"],
     ["Health & Faults", "Health & Faults"],
@@ -13,6 +14,7 @@ test("all primary screens are reachable", async ({ page }) => {
     ["Replay", "Mission Replay"],
     ["Diagnostics", "Diagnostics & Explainability"],
     ["Maintenance", "Predictive Maintenance"],
+    ["Evaluation Center", "Evaluation Center"],
     ["Settings", "Settings & System"],
     ["Command Center", "Command Center"],
   ] as const;
@@ -79,6 +81,7 @@ test("maintenance page is no longer orphaned", async ({ page }) => {
 });
 
 test("hosted demo account can be created and opened", async ({ page }) => {
+  test.setTimeout(60000);
   await page.getByRole("button", { name: "Create account", exact: true }).click();
   await page.getByLabel("Full name").fill("Demo Operator");
   await page.getByLabel("Email").fill("demo.operator@example.com");
@@ -87,4 +90,57 @@ test("hosted demo account can be created and opened", async ({ page }) => {
   await expect(page.getByRole("button", { name: /Demo Operator/ })).toBeVisible();
   await page.getByRole("button", { name: /Demo Operator/ }).click();
   await expect(page.getByText("demo.operator@example.com", { exact: true })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole("button", { name: /Demo Operator/ })).toBeVisible();
+  await page.getByRole("button", { name: "Sign Out", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Sign in", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await page.getByLabel("Email", { exact: true }).fill("DEMO.OPERATOR@example.com");
+  await page.getByLabel("Password", { exact: true }).fill("TwinGuard2026");
+  await page.locator("form").getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(page.getByRole("button", { name: /Demo Operator/ })).toBeVisible();
+});
+
+test("local profile rejects weak passwords with a recoverable error", async ({ page }) => {
+  await page.getByRole("button", { name: "Create account", exact: true }).click();
+  await page.getByLabel("Full name", { exact: true }).fill("Demo Operator");
+  await page.getByLabel("Email", { exact: true }).fill("validation@example.com");
+  await page.getByLabel("Password", { exact: true }).fill("lowercase2026");
+  await page.locator("form").getByRole("button", { name: "Create account", exact: true }).click();
+  await expect(page.getByRole("alert")).toHaveText("Password needs an uppercase letter.");
+  await page.getByLabel("Password", { exact: true }).fill("TwinGuard2026");
+  await page.locator("form").getByRole("button", { name: "Create account", exact: true }).click();
+  await expect(page.getByRole("button", { name: /Demo Operator/ })).toBeVisible();
+});
+
+test("malformed browser account data does not crash the workspace", async ({ page }) => {
+  await page.evaluate(() => {
+    localStorage.setItem("twinguard_session", '{"token":"broken","user":{"name":7}}');
+    localStorage.setItem("twinguard_demo_accounts", "null");
+  });
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Command Center", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Create account", exact: true }).click();
+  await page.getByLabel("Full name", { exact: true }).fill("Recovered Operator");
+  await page.getByLabel("Email", { exact: true }).fill("recovered@example.com");
+  await page.getByLabel("Password", { exact: true }).fill("TwinGuard2026");
+  await page.locator("form").getByRole("button", { name: "Create account", exact: true }).click();
+  await expect(page.getByRole("button", { name: /Recovered Operator/ })).toBeVisible();
+});
+
+test("account dialog traps keyboard focus and restores it after Escape", async ({ page }) => {
+  const opener = page.getByRole("button", { name: "Create account", exact: true });
+  await opener.click();
+  const dialog = page.getByRole("dialog", { name: "TwinGuard account" });
+  await expect(dialog.getByLabel("Full name", { exact: true })).toBeFocused();
+  const close = dialog.getByRole("button", { name: "Close account dialog", exact: true });
+  const submit = dialog.locator("form").getByRole("button", { name: "Create account", exact: true });
+  await submit.focus();
+  await page.keyboard.press("Tab");
+  await expect(close).toBeFocused();
+  await page.keyboard.press("Shift+Tab");
+  await expect(submit).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(dialog).not.toBeVisible();
+  await expect(opener).toBeFocused();
 });

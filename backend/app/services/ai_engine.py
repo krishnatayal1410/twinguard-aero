@@ -56,7 +56,7 @@ class AIEngine:
             try:
                 path = model_path / name
                 return joblib.load(path) if path.exists() else None
-            except BaseException:
+            except Exception:
                 return None
 
         try:
@@ -96,11 +96,19 @@ class AIEngine:
             warnings.append("packaged classifier uses an older fault taxonomy")
         if self.native_ml_requested and not self.artifacts_compatible:
             warnings.append("native ML was requested but incompatible artifacts were rejected")
+        if self.native_ml and any(model is None for model in (self.anomaly, self.fault, self.rul)):
+            warnings.append(
+                "native ML pack is incomplete or failed to load; all predictions use engineering fallback"
+            )
+            self.native_ml = False
+            self.anomaly = self.fault = self.rul = None
         self.model_warning = (
             "; ".join(warnings) + ". Retrain the synthetic model pack before enabling native ML."
             if warnings
             else None
         )
+        self.last_prediction_mode = None
+        self.last_prediction_warning = None
 
     def vector(self, telemetry, residuals):
         merged = {**telemetry, **residuals}
@@ -116,45 +124,48 @@ class AIEngine:
     def predict(self, t, r, trends=None):
         trends = trends or {}
         x = self.vector(t, r)
-        if self.anomaly is not None:
+        native_prediction = False
+        prediction_warning = None
+        if self.native_ml and all(model is not None for model in (self.anomaly, self.fault, self.rul)):
             try:
                 raw = float(-self.anomaly.score_samples(x)[0])
                 anomaly = bool(self.anomaly.predict(x)[0] == -1)
                 anomaly_score = max(0.0, min(1.0, (raw - 0.35) / 0.45))
-            except Exception:
-                anomaly_score, anomaly = self._engineering_anomaly(t, r, trends)
-        else:
-            anomaly_score, anomaly = self._engineering_anomaly(t, r, trends)
-
-        probs: dict[str, float]
-        if self.fault is not None:
-            try:
-                pp = self.fault.predict_proba(x)[0]
+                pp = np.asarray(self.fault.predict_proba(x)[0], dtype=float)
                 classes = [
-                    self.labels[int(c)]
-                    if str(c).lstrip("-").isdigit() and int(c) < len(self.labels)
-                    else str(c)
+                    self.labels[int(c)] if str(c).isdigit() and 0 <= int(c) < len(self.labels) else str(c)
                     for c in self.fault.classes_
                 ]
+                rul_prediction = float(self.rul.predict(x)[0])
+                if (
+                    not math.isfinite(raw)
+                    or not math.isfinite(rul_prediction)
+                    or len(classes) != len(pp)
+                    or set(classes) != set(SUPPORTED_LABELS)
+                    or not np.isfinite(pp).all()
+                    or (pp < 0).any()
+                    or not np.isclose(pp.sum(), 1.0, atol=1e-4)
+                ):
+                    raise ValueError("Invalid native model output")
+                pp = pp / pp.sum()
                 probs = {c: float(v) for c, v in zip(classes, pp)}
                 fault = max(probs, key=probs.get)
                 confidence = probs[fault]
-            except Exception:
-                fault, confidence, probs = self._engineering_fault(t, r, trends, anomaly)
-        else:
-            fault, confidence, probs = self._engineering_fault(t, r, trends, anomaly)
-
-        if self.rul is not None:
-            try:
-                rul = max(1.0, float(self.rul.predict(x)[0]))
+                rul = max(1.0, rul_prediction)
                 rul_basis = "synthetic_xgboost_regressor"
-            except Exception:
-                rul = self._engineering_rul(t, r, trends)
-                rul_basis = "engineering_surrogate"
-        else:
+                native_prediction = True
+            except Exception as exc:
+                # Do not silently combine native and fallback estimates or
+                # label a failed inference as NATIVE_ML in the HMI.
+                prediction_warning = f"Native inference failed ({type(exc).__name__}); engineering fallback used for this sample."
+        if not native_prediction:
+            anomaly_score, anomaly = self._engineering_anomaly(t, r, trends)
+            fault, confidence, probs = self._engineering_fault(t, r, trends, anomaly)
             rul = self._engineering_rul(t, r, trends)
             rul_basis = "engineering_surrogate"
 
+        self.last_prediction_mode = "NATIVE_ML" if native_prediction else "ENGINEERING_FALLBACK"
+        self.last_prediction_warning = prediction_warning
         interval = self._rul_interval(rul, rul_basis, trends, anomaly_score)
         evidence = self.explain(t, r, fault)
         return {
@@ -167,21 +178,21 @@ class AIEngine:
             "rul_interval_hours": interval,
             "rul_uncertainty_hours": round((interval["upper"] - interval["lower"]) / 2, 2),
             "evidence": evidence,
-            "model_state": "NATIVE_ML"
-            if self.native_ml and self.fault is not None
-            else "ENGINEERING_FALLBACK",
+            "model_state": self.last_prediction_mode,
+            "fault_probability_basis": "synthetic_classifier_uncalibrated"
+            if native_prediction
+            else "normalized_engineering_scores_uncalibrated",
             "validation_scope": "SYNTHETIC_PROOF_OF_CONCEPT",
             "rul_basis": rul_basis,
             "rul_interval_basis": interval["basis"],
             "feature_contract": "aero-piston-v2",
-            "model_warning": self.model_warning,
+            "model_warning": prediction_warning or self.model_warning,
         }
 
     def runtime_status(self):
         return {
-            "active_mode": "NATIVE_ML"
-            if self.native_ml and self.fault is not None and self.rul is not None
-            else "ENGINEERING_FALLBACK",
+            "active_mode": self.last_prediction_mode
+            or ("NATIVE_ML" if self.native_ml else "ENGINEERING_FALLBACK"),
             "native_ml_requested": self.native_ml_requested,
             "artifact_contract_compatible": self.artifacts_compatible,
             "feature_contract": "aero-piston-v2",
@@ -193,7 +204,7 @@ class AIEngine:
             },
             "synthetic_metrics_available": bool(self.synthetic_metrics),
             "validation_scope": "SYNTHETIC_PROOF_OF_CONCEPT",
-            "warning": self.model_warning,
+            "warning": self.last_prediction_warning or self.model_warning,
         }
 
     def _rul_interval(self, estimate, basis, trends, anomaly_score):
@@ -309,7 +320,13 @@ class AIEngine:
         confidence = probs[fault]
         if not anomaly:
             fault = "normal"
-            confidence = max(confidence, 0.82)
+            confidence = max(probs["normal"], 0.82)
+            # Preserve the relative fault weights while reserving the nominal
+            # confidence. Overwriting only normal previously made totals > 1.
+            remaining = sum(value for key, value in probs.items() if key != "normal")
+            probs = {
+                key: value * (1.0 - confidence) / remaining for key, value in probs.items() if key != "normal"
+            }
             probs["normal"] = confidence
         return fault, confidence, probs
 
