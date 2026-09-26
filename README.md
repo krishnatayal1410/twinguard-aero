@@ -306,7 +306,7 @@ The mission-control interface includes:
 - mission replay,
 - system status and settings.
 
-The command center no longer displays hard-coded future mission “success” or fuel-burn values. Mission outputs appear only after the backend Mission Reliability Twin has actually run.
+The command center no longer displays hard-coded future mission “success” or fuel-burn values. Mission outputs appear only after the active runtime has evaluated a mission profile: the Python Mission Reliability Twin in backend mode, or the explicitly labeled browser simulator in hosted-demo mode.
 
 ---
 
