@@ -13,12 +13,15 @@ from sqlalchemy import (
     Text,
     create_engine,
 )
+from sqlalchemy.engine import make_url
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
 from .core import settings
 
 if settings.database_url.startswith("sqlite"):
-    Path("./data/runtime").mkdir(parents=True, exist_ok=True)
+    sqlite_path = make_url(settings.database_url).database
+    if sqlite_path and sqlite_path != ":memory:":
+        Path(sqlite_path).parent.mkdir(parents=True, exist_ok=True)
 database_url = settings.database_url
 if database_url.startswith(("postgres://", "postgresql://")):
     database_url = "postgresql+psycopg://" + database_url.split("://", 1)[1]

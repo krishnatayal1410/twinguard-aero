@@ -224,6 +224,13 @@ jobs:
           exit 1
       - name: Run browser end-to-end suite
         run: npm run e2e
+      - name: Upload browser verification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-verification-evidence
+          path: frontend/test-results
+          retention-days: 7
       - name: Show browser preview logs on failure
         if: failure()
         run: cat /tmp/twinguard-preview.log || true

@@ -19,7 +19,8 @@ from fastapi import (
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from sqlalchemy import text
-from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.concurrency import run_in_threadpool
+from starlette.datastructures import MutableHeaders
 from starlette.responses import JSONResponse
 
 from .core import settings
@@ -37,50 +38,119 @@ from .schemas import (
 from .services.auth import AuthError, session_user, signin, signout, signup
 from .services.explainability import tree_contributions
 from .services.operations import check_production, request_limiter, validate_live_sample
+from .services.replay import RecordingInProgressError
 from .services.twin_manager import manager
 
 log = logging.getLogger("twinguard")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
-clients: set[WebSocket] = set()
 
 
-class SecurityMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):
+class TwinPeer:
+    """Serialize socket writes and prevent concurrent ingestion from rewinding a client."""
+
+    def __init__(self, socket):
+        self.socket = socket
+        self.lock = asyncio.Lock()
+        self.last_sample = None
+        self.failed = False
+
+    async def send(self, payload, sample_timestamp=None):
+        async with self.lock:
+            if self.failed or (
+                sample_timestamp is not None
+                and self.last_sample is not None
+                and sample_timestamp <= self.last_sample
+            ):
+                return
+            try:
+                await asyncio.wait_for(self.socket.send_text(payload), timeout=2.0)
+            except Exception:
+                self.failed = True
+                raise
+            if sample_timestamp is not None:
+                self.last_sample = sample_timestamp
+
+
+clients: dict[WebSocket, TwinPeer] = {}
+
+
+class SecurityMiddleware:
+    """Bound the actual request bytes, including chunked and misdeclared bodies."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+        request = Request(scope)
+
+        async def secure_send(message):
+            if message["type"] == "http.response.start":
+                headers = MutableHeaders(scope=message)
+                headers.update(
+                    {
+                        "X-Content-Type-Options": "nosniff",
+                        "X-Frame-Options": "DENY",
+                        "Referrer-Policy": "no-referrer",
+                        "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+                        "Cache-Control": "no-store" if request.url.path.startswith("/api/") else "no-cache",
+                    }
+                )
+            await send(message)
+
+        async def reject(detail, status, headers=None):
+            response = JSONResponse({"detail": detail}, status, headers=headers)
+            await response(scope, receive, secure_send)
+
         if not request_limiter.allow(request):
-            return JSONResponse(
-                {"detail": "Too many authentication attempts. Retry in a minute."},
+            return await reject(
+                "Too many authentication attempts. Retry in a minute.",
                 429,
                 headers={"Retry-After": "60"},
             )
         try:
             length = int(request.headers.get("content-length", "0") or 0)
         except ValueError:
-            return JSONResponse({"detail": "Invalid Content-Length"}, 400)
+            return await reject("Invalid Content-Length", 400)
         if length < 0 or length > settings.max_body_bytes:
-            return JSONResponse({"detail": "Request too large"}, 413)
-        response = await call_next(request)
-        response.headers.update(
-            {
-                "X-Content-Type-Options": "nosniff",
-                "X-Frame-Options": "DENY",
-                "Referrer-Policy": "no-referrer",
-                "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
-                "Cache-Control": "no-store" if request.url.path.startswith("/api/") else "no-cache",
-            }
-        )
-        return response
+            return await reject("Request too large", 413)
+
+        body = bytearray()
+        while True:
+            message = await receive()
+            if message["type"] == "http.disconnect":
+                return
+            chunk = message.get("body", b"")
+            if len(body) + len(chunk) > settings.max_body_bytes:
+                return await reject("Request too large", 413)
+            body.extend(chunk)
+            if not message.get("more_body", False):
+                break
+
+        delivered = False
+
+        async def bounded_receive():
+            nonlocal delivered
+            if not delivered:
+                delivered = True
+                return {"type": "http.request", "body": bytes(body), "more_body": False}
+            return await receive()
+
+        await self.app(scope, bounded_receive, secure_send)
 
 
 async def broadcast(state):
-    payload = json.dumps(state, default=str)
-    dead = []
-    for ws in tuple(clients):
+    payload = json.dumps(_runtime_snapshot(state), default=str)
+    timestamp = datetime.fromisoformat(str(state["timestamp"]).replace("Z", "+00:00"))
+
+    async def deliver(ws, peer):
         try:
-            await ws.send_text(payload)
+            await peer.send(payload, timestamp)
         except Exception:
-            dead.append(ws)
-    for ws in dead:
-        clients.discard(ws)
+            clients.pop(ws, None)
+
+    await asyncio.gather(*(deliver(ws, peer) for ws, peer in tuple(clients.items())))
 
 
 def ingest_sync(data):
@@ -189,7 +259,12 @@ def _runtime_snapshot(state: dict) -> dict:
     age = _state_age_seconds(state)
     quality = float(state.get("data_quality", {}).get("overall", 0.0))
     stale = age is None or age < -5 or age > settings.telemetry_stale_seconds
-    quality_ok = quality >= settings.mission_min_data_quality
+    sensor_integrity_ok = float(state.get("health", {}).get("sensor", 100.0)) >= 55
+    quality_ok = (
+        quality >= settings.mission_min_data_quality
+        and state.get("data_quality", {}).get("label") != "POOR"
+        and sensor_integrity_ok
+    )
     decision_eligible = not stale and quality_ok
     snapshot = dict(state)
     snapshot["runtime_validity"] = {
@@ -198,6 +273,7 @@ def _runtime_snapshot(state: dict) -> dict:
         "freshness_limit_seconds": settings.telemetry_stale_seconds,
         "data_quality": quality,
         "minimum_data_quality": settings.mission_min_data_quality,
+        "sensor_integrity_ok": sensor_integrity_ok,
         "decision_eligible": decision_eligible,
     }
     if stale:
@@ -212,7 +288,7 @@ def _runtime_snapshot(state: dict) -> dict:
         snapshot["readiness"] = {
             "status": "DATA_HOLD",
             "label": "DATA HOLD",
-            "reason": f"Data-quality score {quality:.1f} is below the mission-analysis threshold {settings.mission_min_data_quality:.1f}.",
+            "reason": f"Data-quality score {quality:.1f} or sensor integrity fails the mission-analysis gate (minimum quality {settings.mission_min_data_quality:.1f}; minimum sensor integrity 55).",
         }
     return snapshot
 
@@ -254,9 +330,14 @@ async def telemetry(t: Telemetry, x_twinguard_ingest_key: str | None = Header(de
         raise HTTPException(401, "Invalid telemetry ingest key")
     if t.engine_id != settings.engine_id:
         raise HTTPException(403, "Engine ID is not authorized")
-    with manager.lock:
-        validate_live_sample(t, manager.get())
-        state = manager.ingest(t.model_dump())
+
+    def process():
+        with manager.lock:
+            validate_live_sample(t, manager.get())
+            return manager.ingest(t.model_dump())
+
+    # Native inference and database commits must not block the ASGI event loop.
+    state = await run_in_threadpool(process)
     send_to_unreal(state)
     await broadcast(state)
     return state
@@ -349,7 +430,10 @@ def simulation_config(_=Depends(require_simulation_reader)):
 
 @app.post("/api/v1/replay/start")
 def replay_start(req: ReplayStart, user=Depends(require_user)):
-    return manager.replay.start(req.label)
+    try:
+        return manager.replay.start(req.label)
+    except RecordingInProgressError as exc:
+        raise HTTPException(409, str(exc)) from exc
 
 
 @app.post("/api/v1/replay/end")
@@ -385,9 +469,10 @@ def replay_samples(mission_id: int, limit: int = 5000, user=Depends(require_user
 def system_status(user=Depends(require_user)):
     state = manager.get()
     age = _state_age_seconds(state)
-    stale = age is None or age < -5 or age > settings.telemetry_stale_seconds if state else True
+    validity = _runtime_snapshot(state)["runtime_validity"] if state else None
+    stale = validity["stale"] if validity else True
     quality = float(state.get("data_quality", {}).get("overall", 0.0)) if state else 0.0
-    decision_eligible = bool(state) and not stale and quality >= settings.mission_min_data_quality
+    decision_eligible = bool(validity and validity["decision_eligible"])
     return {
         "service": settings.app_name,
         "version": settings.version,
@@ -399,6 +484,7 @@ def system_status(user=Depends(require_user)):
             "fault": manager.ai.fault is not None,
             "rul": manager.ai.rul is not None,
         },
+        "model_runtime": manager.ai.runtime_status(),
         "integrations": {
             "mqtt": settings.mqtt_enabled,
             "unreal_udp": settings.unreal_udp_enabled,
@@ -429,29 +515,43 @@ async def twin_ws(ws: WebSocket, engine_id: str):
     if not session_user(ws.query_params.get("token")):
         return await ws.close(code=1008)
     await ws.accept()
-    clients.add(ws)
+    peer = TwinPeer(ws)
+    clients[ws] = peer
     try:
-        if manager.get():
-            await ws.send_json(_runtime_snapshot(manager.get()))
+        initial = manager.get()
+        if initial:
+            await peer.send(
+                json.dumps(_runtime_snapshot(initial), default=str),
+                datetime.fromisoformat(str(initial["timestamp"]).replace("Z", "+00:00")),
+            )
         while True:
             await asyncio.sleep(5)
+            if peer.failed:
+                break
             if not session_user(ws.query_params.get("token")):
                 await ws.close(code=1008)
                 break
             state = manager.get()
-            await ws.send_json(
-                {
-                    "type": "heartbeat",
-                    "timestamp": datetime.now(UTC).isoformat(),
-                    "runtime_validity": _runtime_snapshot(state)["runtime_validity"]
-                    if state
-                    else {"decision_eligible": False, "stale": True},
-                }
+            await peer.send(
+                json.dumps(
+                    {
+                        "type": "heartbeat",
+                        "timestamp": datetime.now(UTC).isoformat(),
+                        "runtime_validity": _runtime_snapshot(state)["runtime_validity"]
+                        if state
+                        else {"decision_eligible": False, "stale": True},
+                    }
+                )
             )
-    except WebSocketDisconnect:
+    except (WebSocketDisconnect, RuntimeError, OSError, TimeoutError):
         pass
     finally:
-        clients.discard(ws)
+        clients.pop(ws, None)
+        if peer.failed:
+            try:
+                await asyncio.wait_for(ws.close(code=1011), timeout=2.0)
+            except (WebSocketDisconnect, RuntimeError, OSError, TimeoutError):
+                pass
 
 
 @app.get("/ready")

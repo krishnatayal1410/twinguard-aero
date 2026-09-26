@@ -1,5 +1,6 @@
 from datetime import UTC, datetime
 
+import pytest
 from app.schemas import MissionRequest
 from app.services.ai_engine import AIEngine
 from app.services.twin_manager import manager
@@ -152,3 +153,23 @@ def test_electrical_and_timing_channels_are_part_of_the_twin():
 def test_no_turboshaft_fault_taxonomy_leaks_into_runtime():
     state = manager.ingest(sample())
     assert "turbine_blade_degradation" not in state["ai"]["fault_probabilities"]
+
+
+@pytest.mark.parametrize(
+    "mission_type", ["endurance", "high_altitude", "hot_weather", "rapid_throttle", "patrol"]
+)
+@pytest.mark.parametrize("duration,altitude,throttle", [(0.25, 0, 10), (0.4, 1500, 35), (8, 5500, 75)])
+def test_lower_stress_alternative_never_increases_requested_load(mission_type, duration, altitude, throttle):
+    state = manager.ingest(sample())
+    request = MissionRequest(
+        mission_type=mission_type,
+        duration_hours=duration,
+        cruise_altitude_m=altitude,
+        average_throttle_pct=throttle,
+    )
+    result = manager.mission.analyze(state, request)
+    alternative = result["lower_stress_alternative"]
+    assert alternative["cruise_altitude_m"] <= altitude
+    assert alternative["duration_hours"] <= duration
+    assert alternative["average_throttle_pct"] <= throttle
+    assert alternative["projected_stress_index"] <= result["stress_index"]

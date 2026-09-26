@@ -9,7 +9,7 @@ interface Store {
   view: ViewName;
   focus: string;
   history: Record<HistoryKey, number[]>;
-  missionRuns: Array<{ fault: string; result: MissionResult }>;
+  missionRuns: Array<{ fault: string; result: MissionResult; recorded_at: string }>;
   missions: ReplayMission[];
   setTwin: (x: TwinState) => void;
   setOnline: (x: boolean) => void;
@@ -85,6 +85,8 @@ export const useTwinStore = create<Store>((set) => ({
   },
   setFocus: (focus) => set({ focus }),
   addMission: (fault, result) =>
-    set((s) => ({ missionRuns: [...s.missionRuns, { fault, result }].slice(-8) })),
+    set((s) => ({
+      missionRuns: [...s.missionRuns, { fault, result, recorded_at: new Date().toISOString() }].slice(-8),
+    })),
   setMissions: (missions) => set({ missions }),
 }));

@@ -36,18 +36,19 @@ function saveScenario() {
     /* simulation remains usable without storage */
   }
 }
-function readScenario() {
+function readScenario(initializeStorage = true) {
   try {
     const raw = localStorage.getItem(FAULT_KEY);
     if (!raw) {
-      saveScenario();
+      if (initializeStorage) saveScenario();
       return;
     }
     const saved = JSON.parse(raw);
     if (
       faults.includes(saved.scenario) &&
       Number.isFinite(saved.severity) &&
-      Number.isFinite(saved.startedAt)
+      Number.isFinite(saved.startedAt) &&
+      Number.isFinite(new Date(saved.startedAt).getTime())
     ) {
       scenario = saved.scenario;
       severity = Math.max(0, Math.min(1, saved.severity));
@@ -68,11 +69,19 @@ export const isHostedDemo = isDemo;
 const clamp = (v: number, a = 0, b = 100) => Math.max(a, Math.min(b, v));
 const human = (s: string) => s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 
+export function getDemoScenario() {
+  readScenario(false);
+  return { fault: scenario, severity, started_at: new Date(startedAt).toISOString() };
+}
+
 export function setDemoFault(fault: FaultName, target: number) {
+  if (!faults.includes(fault) || !Number.isFinite(target) || target < 0 || target > 1)
+    throw new Error("Choose a supported fault and an intensity between 0 and 1.");
   scenario = fault;
-  severity = Math.max(0, Math.min(1, target));
+  severity = target;
   tick = 0;
   startedAt = Date.now();
+  latest = undefined;
   saveScenario();
 }
 export function resetDemoFault() {
@@ -80,6 +89,7 @@ export function resetDemoFault() {
   severity = 0;
   tick = 0;
   startedAt = Date.now();
+  latest = undefined;
   saveScenario();
 }
 export function rememberDemoTwin(t: TwinState) {
@@ -354,10 +364,10 @@ export function buildDemoTwin(): TwinState {
       anomaly_score: anomaly ? Math.min(1, 0.2 + progress * 0.8) : 0.04,
       probable_fault: anomaly ? scenario : "normal",
       fault_confidence: confidencePct / 100,
-      fault_probabilities: {
-        [scenario]: anomaly ? confidencePct / 100 : 0.04,
-        normal: anomaly ? 0.08 : 0.96,
-      },
+      fault_probabilities: anomaly
+        ? { [scenario]: confidencePct / 100, normal: 1 - confidencePct / 100 }
+        : { normal: 1 },
+      fault_probability_basis: "scenario_conditioned_demo_scores_uncalibrated",
       rul_hours: rul,
       rul_interval_hours: {
         lower: rul * 0.78,
@@ -375,7 +385,7 @@ export function buildDemoTwin(): TwinState {
       feature_contract: "aero-piston-v2",
       anomaly_persistence_samples: anomaly ? Math.round(progress * 42) : 0,
       model_warning:
-        "Hosted demo uses deterministic synthetic telemetry. Real-engine calibration is not claimed.",
+        "Hosted demo uses deterministic synthetic telemetry and scenario-conditioned scores, not model inference. Real-engine calibration is not claimed.",
     },
     confidence: {
       ai: confidencePct,
@@ -444,30 +454,42 @@ export function demoAnalyzeMission(payload: Record<string, unknown>): MissionRes
     rapid_throttle: 18,
     patrol: 8,
   };
-  const stress = clamp(
-    typeStress[type] +
-      duration * 2.2 +
-      Math.max(0, altitude - 3500) / 450 +
-      Math.max(0, temp - 30) * 0.7 +
-      Math.max(0, throttle - 60) * 0.55 +
-      (100 - health) * 0.8,
-    0,
-    100,
-  );
-  const feasibility = clamp(100 - stress * 0.68 - (100 - health) * 0.32, 4, 98),
-    risk = stress < 34 ? "LOW" : stress < 62 ? "MEDIUM" : "HIGH";
-  const postHealth = clamp(health - duration * (stress / 100) * 1.6),
-    postRul = Math.max(0, rul - duration * (0.7 + stress / 75));
-  const reserve = Math.max(0, lower * 0.14),
-    margin = lower - duration - reserve,
-    horizon = Math.max(0, lower - reserve - duration * 0.55);
-  const alt = {
-    cruise_altitude_m: Math.max(2500, Math.round((altitude - 900) / 100) * 100),
-    duration_hours: Math.max(0.5, Number((duration * 0.88).toFixed(2))),
-    average_throttle_pct: Math.max(50, Math.round(throttle - 12)),
+  // Project both profiles through one model. The preview must match applying
+  // that alternative to the same twin snapshot, including its reserve gate.
+  const project = (hours: number, metres: number, load: number) => {
+    const stress = clamp(
+      typeStress[type] +
+        hours * 2.2 +
+        Math.max(0, metres - 3500) / 450 +
+        Math.max(0, temp - 30) * 0.7 +
+        Math.max(0, load - 60) * 0.55 +
+        (100 - health) * 0.8,
+    );
+    const reserve = Math.max(0, lower * 0.14);
+    const margin = lower - hours - reserve;
+    const risk = margin <= 0 || stress >= 62 ? "HIGH" : stress < 34 ? "LOW" : "MEDIUM";
+    return {
+      stress,
+      risk,
+      reserve,
+      margin,
+      horizon: Math.max(0, margin),
+      postHealth: clamp(health - hours * (stress / 100) * 1.6),
+      postRul: Math.max(0, rul - hours * (0.7 + stress / 75)),
+    } as const;
   };
-  const altStress = clamp(stress - 18, 0, 100),
-    altRisk = altStress < 34 ? "LOW" : altStress < 62 ? "MEDIUM" : "HIGH";
+  const { stress, risk, reserve, margin, horizon, postHealth, postRul } = project(
+    duration,
+    altitude,
+    throttle,
+  );
+  const feasibility = clamp(100 - stress * 0.68 - (100 - health) * 0.32, 4, 98);
+  const alt = {
+    cruise_altitude_m: Math.max(0, altitude - 800),
+    duration_hours: Math.max(0.25, Number((duration * 0.82).toFixed(2))),
+    average_throttle_pct: Math.max(10, throttle - 10),
+  };
+  const alternative = project(alt.duration_hours, alt.cruise_altitude_m, alt.average_throttle_pct);
   return {
     mission_type: type,
     profile_modifier_description: `${human(type)} duty-cycle modifier`,
@@ -512,12 +534,12 @@ export function demoAnalyzeMission(payload: Record<string, unknown>): MissionRes
       horizon < 1 ? "IMMEDIATE_REVIEW" : horizon < 3 ? "REVIEW_SOON" : "MARGIN_AVAILABLE",
     lower_stress_alternative: {
       ...alt,
-      projected_stress_index: altStress / 100,
-      projected_risk: altRisk,
-      projected_profile_endurance_hours: Math.max(0, lower - reserve),
-      mission_margin_hours: margin + duration * 0.24,
-      decision_horizon_hours: horizon + duration * 0.22,
-      engineering_reserve_hours: reserve,
+      projected_stress_index: alternative.stress / 100,
+      projected_risk: alternative.risk,
+      projected_profile_endurance_hours: Math.max(0, lower - alternative.reserve),
+      mission_margin_hours: alternative.margin,
+      decision_horizon_hours: alternative.horizon,
+      engineering_reserve_hours: alternative.reserve,
     },
     explanation: `Current ${human(type)} profile is evaluated against the synchronized synthetic Twin state. The alternative reduces throttle, altitude and exposure to demonstrate counterfactual decision support.`,
     mission_feasibility_index: feasibility,
@@ -702,7 +724,7 @@ export async function demoGetReplaySamples(id: number) {
 export function demoSystemStatus(): SystemStatus {
   return {
     service: "TwinGuard Aero Hosted Demo",
-    version: "4.1.0",
+    version: "3.3.0",
     environment: "vercel-demo",
     engine_id: "ENGINE-01",
     database: "Browser-local recordings (12 most recent)",

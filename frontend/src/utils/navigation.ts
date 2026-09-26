@@ -9,6 +9,7 @@ export const viewPaths: Record<ViewName, string> = {
   replay: "replay",
   diagnostics: "diagnostics",
   maintenance: "maintenance",
+  evaluation: "evaluation",
   settings: "settings",
 };
 export function readRoute() {

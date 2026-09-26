@@ -25,10 +25,10 @@ export function Panel({ children, className = "" }: { children: ReactNode; class
   return (
     <motion.section
       className={`ref-panel ${className}`}
-      initial={reduced ? false : { opacity: 0, y: 14 }}
+      initial={false}
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, amount: 0.04 }}
-      transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+      transition={{ duration: reduced ? 0 : 0.35, ease: [0.22, 1, 0.36, 1] }}
     >
       {children}
     </motion.section>

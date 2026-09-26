@@ -44,4 +44,57 @@ await test('mission values are validated before synthetic analysis',async()=>{
  for(const [key,value] of [['duration_hours',0],['duration_hours',Infinity],['cruise_altitude_m',-1],['ambient_temp_c',NaN],['average_throttle_pct',101],['mission_type','unknown']])
  assert.throws(()=>runtime.demoAnalyzeMission({...input,[key]:value}));
 });
+await test('alternative mission projections agree with reruns and never increase low inputs',async()=>{
+ const runtime=await fresh();runtime.resetDemoFault();runtime.buildDemoTwin();
+ for(const input of [
+  {mission_type:'patrol',duration_hours:0.25,cruise_altitude_m:0,ambient_temp_c:20,average_throttle_pct:10},
+  {mission_type:'endurance',duration_hours:8,cruise_altitude_m:5500,ambient_temp_c:35,average_throttle_pct:75},
+  {mission_type:'high_altitude',duration_hours:48,cruise_altitude_m:12000,ambient_temp_c:70,average_throttle_pct:100},
+ ]){
+  const result=runtime.demoAnalyzeMission(input),alt=result.lower_stress_alternative;
+  for(const key of ['duration_hours','cruise_altitude_m','average_throttle_pct']) assert.ok(alt[key]<=input[key],key);
+  const rerun=runtime.demoAnalyzeMission({...input,...alt});
+  assert.equal(alt.projected_stress_index,rerun.stress_index);
+  assert.equal(alt.projected_risk,rerun.overall_risk);
+  assert.equal(alt.mission_margin_hours,rerun.mission_margin_hours);
+  assert.equal(alt.decision_horizon_hours,rerun.decision_horizon_hours);
+  assert.ok(alt.projected_stress_index<=result.stress_index);
+  assert.ok(alt.mission_margin_hours>=result.mission_margin_hours);
+ }
+});
+await test('exhausted conservative mission reserve requires replan despite low load',async()=>{
+ const runtime=await fresh();runtime.resetDemoFault();const twin=runtime.buildDemoTwin();
+ twin.ai.rul_hours=1;twin.ai.rul_interval_hours.lower=0.78;runtime.rememberDemoTwin(twin);
+ const result=runtime.demoAnalyzeMission({mission_type:'patrol',duration_hours:1,cruise_altitude_m:0,ambient_temp_c:20,average_throttle_pct:10});
+ assert.ok(result.mission_margin_hours<0);assert.equal(result.overall_risk,'HIGH');
+ assert.equal(result.decision,'REPLAN_OR_RETURN_FOR_REVIEW');assert.equal(result.decision_horizon_hours,0);
+});
+await test('all demo scenarios provide finite normalized and explicitly uncalibrated scores',async()=>{
+ const runtime=await fresh();
+ for(const fault of ['normal','lubrication','overheating','cooling_degradation','vibration','sensor_drift','injector','misfire','combustion_instability','alternator_degradation']){
+  runtime.setDemoFault(fault,1);
+  const config=JSON.parse(values.get('twinguard-demo-scenario-v1'));config.startedAt-=45000;
+  values.set('twinguard-demo-scenario-v1',JSON.stringify(config));
+  const twin=runtime.buildDemoTwin(),scores=Object.values(twin.ai.fault_probabilities);
+  assert.ok(scores.every(x=>Number.isFinite(x)&&x>=0&&x<=1));
+  assert.ok(Math.abs(scores.reduce((a,b)=>a+b,0)-1)<1e-9);
+  assert.equal(twin.ai.fault_probability_basis,'scenario_conditioned_demo_scores_uncalibrated');
+  assert.match(twin.ai.model_warning,/not model inference/);
+ }
+ assert.throws(()=>runtime.setDemoFault('unknown',1));
+ assert.throws(()=>runtime.setDemoFault('normal',NaN));
+});
+await test('scenario provenance getter reads shared configuration without creating samples or changing storage',async()=>{
+ const runtime=await fresh();values.delete('twinguard-demo-scenario-v1');
+ const initial=runtime.getDemoScenario();assert.ok(Number.isFinite(Date.parse(initial.started_at)));
+ assert.equal(values.has('twinguard-demo-scenario-v1'),false);
+ runtime.setDemoFault('sensor_drift',0.7);const saved=values.get('twinguard-demo-scenario-v1');
+ const other=await fresh(),scenario=other.getDemoScenario();
+ assert.equal(scenario.fault,'sensor_drift');assert.equal(scenario.severity,0.7);
+ assert.equal(scenario.started_at,new Date(JSON.parse(saved).startedAt).toISOString());
+ assert.equal(values.get('twinguard-demo-scenario-v1'),saved);
+ scenario.fault='normal';assert.equal(other.getDemoScenario().fault,'sensor_drift');
+ const mission=await other.demoStartReplay('Read-only provenance');other.getDemoScenario();
+ assert.equal((await other.demoGetReplaySamples(mission.id)).length,0);await other.demoEndReplay();
+});
 await rm(dir,{recursive:true,force:true});

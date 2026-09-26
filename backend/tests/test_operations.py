@@ -76,3 +76,35 @@ def test_production_requires_credentials_and_persistent_storage(monkeypatch):
     config.database_url = "sqlite:///volatile.db"
     with pytest.raises(RuntimeError, match="PostgreSQL"):
         check_production()
+
+
+@pytest.mark.parametrize("declared_length", [None, "1"])
+def test_actual_body_size_is_bounded_even_when_length_is_missing_or_false(declared_length):
+    from app.core import settings
+
+    headers = {"content-length": declared_length} if declared_length is not None else {}
+    # A generator produces a chunked request without Content-Length.
+    result = TestClient(app).post(
+        "/api/v1/telemetry",
+        content=iter([b"x" * settings.max_body_bytes, b"x"]),
+        headers=headers,
+    )
+    assert result.status_code == 413
+    assert result.headers["x-content-type-options"] == "nosniff"
+
+
+def test_configured_sqlite_directory_is_created(tmp_path):
+    import os
+    import subprocess
+    import sys
+
+    db_path = tmp_path / "nested" / "operator" / "twin.db"
+    environment = {**os.environ, "DATABASE_URL": f"sqlite:///{db_path}"}
+    result = subprocess.run(
+        [sys.executable, "-c", "import app.db"],
+        env=environment,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert db_path.is_file()

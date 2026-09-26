@@ -12,11 +12,13 @@ import {
   TrendingDown,
   Zap,
 } from "lucide-react";
+import { isHostedDemo } from "../demo/demoRuntime";
 import { useTwinStore } from "../store/twinStore";
 import EngineTwin from "./EngineTwin";
 import { fmt, pretty } from "./ui";
 import { MiniLineChart, PageHeader, Panel, PanelTitle, StatusPill } from "./ReferenceUI";
 export default function CommandCenter() {
+  const demo = isHostedDemo();
   const twin = useTwinStore((s) => s.twin),
     runtime = useTwinStore((s) => s.runtimeValidity),
     runs = useTwinStore((s) => s.missionRuns),
@@ -68,7 +70,9 @@ export default function CommandCenter() {
     {
       label: "Active diagnosis",
       value: fault,
-      meta: ai.anomaly ? fmt(ai.fault_confidence * 100, 0) + "% confidence" : "All monitored systems nominal",
+      meta: ai.anomaly
+        ? fmt(ai.fault_confidence * 100, 0) + (demo ? "% scenario score" : "% diagnostic score")
+        : "All monitored systems nominal",
       icon: <Zap />,
       tone: faultTone,
     },
@@ -105,12 +109,12 @@ export default function CommandCenter() {
             subtitle="Drag to rotate · Scroll to zoom · Use X-ray to locate faults"
             right={
               <StatusPill tone={eligible ? "green" : "orange"}>
-                <Radio /> {eligible ? "LIVE" : "DATA HOLD"}
+                <Radio /> {eligible ? (demo ? "SIMULATED" : "LIVE") : "DATA HOLD"}
               </StatusPill>
             }
           />
           <div className="cc-engine-stage-v4">
-            <EngineTwin compact autoRotate />
+            <EngineTwin compact />
           </div>
         </Panel>
         <Panel className="cc-intelligence">
@@ -124,7 +128,10 @@ export default function CommandCenter() {
             <div>
               <span>DETECTED CONDITION</span>
               <b>{fault}</b>
-              <small>{fmt(ai.fault_confidence * 100, 0)}% diagnostic confidence</small>
+              <small>
+                {fmt(ai.fault_confidence * 100, 0)}%{" "}
+                {demo ? "scenario score" : "uncalibrated diagnostic score"}
+              </small>
             </div>
           </div>
           <div className="ai-readings">

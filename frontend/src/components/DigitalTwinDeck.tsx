@@ -148,7 +148,7 @@ export default function DigitalTwinDeck() {
             </Panel>
             <Panel className="blueprint-panel">
               <div className="blueprint-stage">
-                <EngineTwin focus="all" autoRotate />
+                <EngineTwin focus="all" />
               </div>
             </Panel>
             <Panel>
